@@ -2,6 +2,8 @@
 
 Research code and collaborator materials for **execution-graph equivalent Transformers**: training one checkpoint that can run under sequential, parallel, and mixed Attention–FFN execution DAGs while preserving quality.
 
+> **Status:** preprint-stage research repository. Results are verified against the packaged artifacts but are not yet peer reviewed. Large checkpoints and training corpora are not included.
+
 ## Core idea
 
 A standard Transformer block is sequential:
@@ -39,9 +41,12 @@ These are exploratory but verified single-seed research results, not final publi
 ```text
 docs/
   COLLABORATOR_BRIEF.md   Current state, verified results, limitations
+  LITERATURE_REVIEW.md    Verified references and novelty-gap analysis
   MESSAGE_TO_COLLABORATOR.md
 paper/
+  LAYMAN_GUIDE_EN.md      English non-technical guide
   LAYMAN_GUIDE_CN.md      Chinese non-technical guide
+  THEORY_GUIDE_EN.md      English progressive theory guide
   THEORY_GUIDE_CN.md      Chinese progressive theory guide
   theory.tex              Formal theorem/proof section
 notebooks/
@@ -61,6 +66,15 @@ configs/
 results/
   Verified JSON artifacts and generated figures
 ```
+
+## Suggested reading order
+
+1. `paper/LAYMAN_GUIDE_EN.md` or `paper/LAYMAN_GUIDE_CN.md`
+2. `docs/COLLABORATOR_BRIEF.md`
+3. `paper/THEORY_GUIDE_EN.md` or `paper/THEORY_GUIDE_CN.md`
+4. `docs/LITERATURE_REVIEW.md`
+5. `blackwell/README.md`
+6. `paper/theory.tex`
 
 ## Main research question
 
