@@ -1,0 +1,39 @@
+{
+  "checkpoint": "<checkpoint>",
+  "device": "cuda",
+  "batch_size": 2,
+  "latency": {
+    "128": {
+      "sequential_seconds": 0.01075200945000688,
+      "parallel_seconds": 0.010072351900016657,
+      "parallel_cuda_seconds": 0.01171345056995051,
+      "parallel_fused_seconds": 0.008883582259950345,
+      "parallel_speedup": 1.0674775421606446,
+      "parallel_cuda_speedup": 0.9179199063331436,
+      "parallel_fused_speedup": 1.2103236211905104
+    },
+    "512": {
+      "sequential_seconds": 0.011396856049977942,
+      "parallel_seconds": 0.01019195936001779,
+      "parallel_cuda_seconds": 0.011889120369960437,
+      "parallel_fused_seconds": 0.0088229911000235,
+      "parallel_speedup": 1.1182203193123847,
+      "parallel_cuda_speedup": 0.9585953960709935,
+      "parallel_fused_speedup": 1.2917224919276622
+    },
+    "1024": {
+      "sequential_seconds": 0.011238501529951463,
+      "parallel_seconds": 0.010116318910004338,
+      "parallel_cuda_seconds": 0.012129162800047198,
+      "parallel_fused_seconds": 0.008679690380013198,
+      "parallel_speedup": 1.1109279600544584,
+      "parallel_cuda_speedup": 0.926568611141713,
+      "parallel_fused_speedup": 1.2948044271061168
+    }
+  },
+  "argmax_agreement": 0.9482421875,
+  "parallel_cuda_max_logit_difference": 0.0,
+  "parallel_fused_max_logit_difference": 0.0,
+  "symmetric_kl": 7.2521257400512695,
+  "centered_logit_rmse": 0.19423314929008484
+}

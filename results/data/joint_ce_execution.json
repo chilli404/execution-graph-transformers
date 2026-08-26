@@ -1,0 +1,21 @@
+{
+  "checkpoint": "<checkpoint>",
+  "device": "cuda",
+  "batch_size": 2,
+  "latency": {
+    "512": {
+      "sequential_seconds": 0.010564621500088833,
+      "parallel_seconds": 0.009666890439984855,
+      "parallel_cuda_seconds": 0.011889430619921768,
+      "parallel_fused_seconds": 0.008898743540048598,
+      "parallel_speedup": 1.0928665805904576,
+      "parallel_cuda_speedup": 0.888572534532217,
+      "parallel_fused_speedup": 1.1872037274187066
+    }
+  },
+  "argmax_agreement": 0.8125,
+  "parallel_cuda_max_logit_difference": 0.0,
+  "parallel_fused_max_logit_difference": 0.0,
+  "symmetric_kl": 31.52950668334961,
+  "centered_logit_rmse": 0.4254833459854126
+}

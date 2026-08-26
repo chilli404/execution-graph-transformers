@@ -1,0 +1,116 @@
+\section{Execution-Graph Defect Theory}
+\label{sec:theory}
+
+Let $N_l$ denote normalization, and absorb it into the attention and feed-forward branches,
+\begin{equation}
+  a_l(x)=A_l(N_l(x)),\qquad g_l(x)=F_l(N_l(x)).
+\end{equation}
+The sequential and parallel realizations of block $l$ are
+\begin{align}
+  S_l(x)&=x+a_l(x)+g_l(x+a_l(x)),\\
+  P_l(x)&=x+a_l(x)+g_l(x).
+\end{align}
+Their local execution-graph defect is
+\begin{equation}
+  d_l(x)=S_l(x)-P_l(x)=g_l(x+a_l(x))-g_l(x).
+  \label{eq:local-defect}
+\end{equation}
+Thus the graph rewrite removes exactly the interaction between the attention update and the normalized nonlinear FFN.
+
+\begin{theorem}[Exact interaction identity]
+\label{thm:exact-defect}
+If $g_l$ is continuously differentiable on $\{x+t a_l(x):t\in[0,1]\}$, then
+\begin{equation}
+  d_l(x)=\int_0^1 Jg_l(x+t a_l(x))a_l(x)\,dt.
+  \label{eq:integral-defect}
+\end{equation}
+Consequently,
+\begin{equation}
+  \|d_l(x)\|\le
+  \sup_{t\in[0,1]}\|Jg_l(x+t a_l(x))\|_{\mathrm{op}}\,\|a_l(x)\|.
+\end{equation}
+\end{theorem}
+
+\begin{proof}
+Fix $x$ and define $\gamma(t)=g_l(x+t a_l(x))$. The chain rule gives $\gamma'(t)=Jg_l(x+t a_l(x))a_l(x)$. Applying the fundamental theorem of calculus to $\gamma(1)-\gamma(0)$ proves Eq.~\eqref{eq:integral-defect}; the norm bound follows from the triangle inequality.
+\end{proof}
+
+\begin{theorem}[First-order defect approximation]
+\label{thm:taylor-defect}
+Suppose $Jg_l$ is $H_l$-Lipschitz on the segment in Theorem~\ref{thm:exact-defect}. Then
+\begin{equation}
+  d_l(x)=Jg_l(x)a_l(x)+r_l(x),
+\end{equation}
+where
+\begin{equation}
+  \|r_l(x)\|\le \frac{H_l}{2}\|a_l(x)\|^2.
+\end{equation}
+\end{theorem}
+
+\begin{proof}
+Subtract $Jg_l(x)a_l(x)$ from Eq.~\eqref{eq:integral-defect} and use Jacobian Lipschitzness:
+\begin{align}
+  \|r_l(x)\|
+  &\le \int_0^1
+  \|Jg_l(x+t a_l(x))-Jg_l(x)\|_{\mathrm{op}}\|a_l(x)\|\,dt\\
+  &\le \int_0^1 H_l t\|a_l(x)\|^2\,dt
+  =\frac{H_l}{2}\|a_l(x)\|^2.
+\end{align}
+\end{proof}
+
+Let $m\in\{0,1\}^L$ denote an execution graph, where $m_l=1$ selects $P_l$ and $m_l=0$ selects $S_l$. Let $x_l^m$ and $x_l^0$ be the corresponding graph and all-sequential trajectories.
+
+\begin{theorem}[Multi-layer graph-rewrite bound]
+\label{thm:graph-bound}
+Assume $S_l$ is $K_l$-Lipschitz on a domain containing both trajectories and $\sup_x\|d_l(x)\|\le D_l$ on that domain. Then
+\begin{equation}
+  \|x_L^m-x_L^0\|
+  \le
+  \sum_{l=0}^{L-1}m_lD_l\prod_{j=l+1}^{L-1}K_j.
+  \label{eq:graph-bound}
+\end{equation}
+\end{theorem}
+
+\begin{proof}
+Let $e_l=\|x_l^m-x_l^0\|$. Adding and subtracting $S_l(x_l^m)$ gives
+\begin{align}
+  e_{l+1}
+  &\le \|S_l(x_l^m)-S_l(x_l^0)\|
+  +m_l\|P_l(x_l^m)-S_l(x_l^m)\|\\
+  &\le K_l e_l+m_lD_l.
+\end{align}
+Unrolling from $e_0=0$ proves Eq.~\eqref{eq:graph-bound}.
+\end{proof}
+
+\begin{theorem}[Output-distribution bound]
+\label{thm:kl-bound}
+Let the final logit map $h$ be $K_h$-Lipschitz, and define $p_m=\mathrm{softmax}(h(x_L^m))$ and $p_0=\mathrm{softmax}(h(x_L^0))$. Then
+\begin{equation}
+  \mathrm{KL}(p_0\|p_m)
+  \le \frac{K_h^2}{4}
+  \left(
+    \sum_{l=0}^{L-1}m_lD_l\prod_{j=l+1}^{L-1}K_j
+  \right)^2.
+  \label{eq:kl-bound}
+\end{equation}
+\end{theorem}
+
+\begin{proof}
+For $A(z)=\log\sum_i\exp z_i$, categorical KL is the Bregman divergence $A(z')-A(z)-\nabla A(z)^\top(z'-z)$. The Hessian $\nabla^2A(z)=\mathrm{diag}(p)-pp^\top$ has Euclidean operator norm at most $1/2$, so the divergence is at most $\frac14\|z'-z\|^2$. Apply the Lipschitz bound for $h$ followed by Theorem~\ref{thm:graph-bound}.
+\end{proof}
+
+\paragraph{First-order graph composition.}
+Extend the binary mask to $u\in[0,1]^L$ using $B_l^u(x)=S_l(x)-u_ld_l(x)$. A multivariate Taylor expansion around the all-sequential graph gives
+\begin{equation}
+  z(u)-z(0)=\sum_lu_lv_l+R(u),
+  \qquad \|R(u)\|\le C\|u\|_1^2,
+\end{equation}
+where $v_l=\partial z/\partial u_l|_{u=0}$ is the propagated single-layer defect. Quadratic output metrics contain pairwise terms $v_i^THv_j$; weak or negative average cross terms yield approximate additivity or subadditivity. Empirically, across both corpora we find
+\begin{equation}
+  D(m)\approx \alpha\sum_{l:m_l=1}D(e_l),
+  \qquad \alpha\in[0.69,0.72].
+\end{equation}
+The coefficient is an empirical calibration parameter, not a universal constant.
+
+\paragraph{Certificate boundary.}
+Theorems~\ref{thm:exact-defect}--\ref{thm:kl-bound} require segment or trajectory-domain bounds. A defect measured only on a reference prompt is not automatically a uniform $D_l$. Our aggregate graph calibration transfers well across corpora, but prompt-adaptive selection exhibits tail undercoverage on held-out ClimbMix prompts. We therefore use \emph{defect predictor} or \emph{budgeted graph ranker} for the empirical method and reserve \emph{certificate} for settings with validated coverage.

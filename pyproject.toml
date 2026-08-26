@@ -1,0 +1,29 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "execution-graph-transformers"
+version = "0.1.0"
+description = "Learning and compiling execution-graph equivalent Transformers"
+requires-python = ">=3.11"
+dependencies = [
+    "matplotlib",
+    "numpy",
+    "pyyaml",
+    "safetensors",
+    "scipy",
+    "tokenizers",
+    "torch",
+    "transformers",
+]
+
+[project.optional-dependencies]
+dev = ["jupyter", "nbconvert", "pytest"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/fogen"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

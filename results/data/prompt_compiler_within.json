@@ -1,0 +1,44 @@
+{
+  "composition_scales": {
+    "least_squares": 0.060976853810535435,
+    "conformal_multiplier": 0.12950978392966428,
+    "conformal_slack": 0.0019627130616947245
+  },
+  "policy_slacks": {
+    "0.004131401656195521": 0.0024556829241448442,
+    "0.005327765829861164": 0.0020255012204996054,
+    "0.006779438909143209": 0.0018023281281904112
+  },
+  "coverage_target": 0.95,
+  "budgets": [
+    0.004131401656195521,
+    0.005327765829861164,
+    0.006779438909143209
+  ],
+  "summaries": {
+    "0.004131401656195521": {
+      "prompts": 128,
+      "coverage": 0.8125,
+      "mean_parallel_layers": 6.7578125,
+      "mean_compiled_kl": 0.0035070298636128427,
+      "mean_random_kl": 0.004450387369161035,
+      "compiled_win_rate": 0.921875
+    },
+    "0.005327765829861164": {
+      "prompts": 128,
+      "coverage": 0.7734375,
+      "mean_parallel_layers": 9.0390625,
+      "mean_compiled_kl": 0.004743658790175687,
+      "mean_random_kl": 0.0053314170741032285,
+      "compiled_win_rate": 0.8359375
+    },
+    "0.006779438909143209": {
+      "prompts": 128,
+      "coverage": 0.890625,
+      "mean_parallel_layers": 11.0,
+      "mean_compiled_kl": 0.005630224930428085,
+      "mean_random_kl": 0.005854786578765925,
+      "compiled_win_rate": 0.7578125
+    }
+  }
+}
