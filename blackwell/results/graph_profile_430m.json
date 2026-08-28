@@ -1,0 +1,92 @@
+{
+  "hardware": {
+    "gpu": "NVIDIA RTX PRO 6000 Blackwell",
+    "backend": "cuda",
+    "memory_gb": 96,
+    "pytorch_version": "2.8.0",
+    "platform": "Linux"
+  },
+  "model": {
+    "vocab_size": 8192,
+    "n_layer": 20,
+    "d_model": 1152,
+    "n_head": 18,
+    "ctx_len": 1024,
+    "params_m": 431.8
+  },
+  "per_layer_measurements": {
+    "batch_size": 1,
+    "sequence_length": 512,
+    "summary": "All layers are effectively identical: ~0.70ms seq, ~0.70ms par, ~0.65ms fused",
+    "mean_seq_ms": 0.702,
+    "mean_par_ms": 0.698,
+    "mean_fused_ms": 0.648,
+    "mean_par_saving_ms": 0.005,
+    "mean_fused_saving_ms": 0.055,
+    "layers": [
+      {"layer": 0, "seq_ms": 0.667, "par_ms": 0.666, "fused_ms": 0.615, "par_saving_ms": 0.001, "fused_saving_ms": 0.052},
+      {"layer": 1, "seq_ms": 0.692, "par_ms": 0.691, "fused_ms": 0.648, "par_saving_ms": 0.001, "fused_saving_ms": 0.044},
+      {"layer": 2, "seq_ms": 0.698, "par_ms": 0.693, "fused_ms": 0.638, "par_saving_ms": 0.005, "fused_saving_ms": 0.060},
+      {"layer": 3, "seq_ms": 0.706, "par_ms": 0.700, "fused_ms": 0.650, "par_saving_ms": 0.006, "fused_saving_ms": 0.056},
+      {"layer": 4, "seq_ms": 0.704, "par_ms": 0.700, "fused_ms": 0.643, "par_saving_ms": 0.005, "fused_saving_ms": 0.061},
+      {"layer": 5, "seq_ms": 0.704, "par_ms": 0.700, "fused_ms": 0.652, "par_saving_ms": 0.005, "fused_saving_ms": 0.052},
+      {"layer": 6, "seq_ms": 0.702, "par_ms": 0.696, "fused_ms": 0.649, "par_saving_ms": 0.005, "fused_saving_ms": 0.053},
+      {"layer": 7, "seq_ms": 0.707, "par_ms": 0.701, "fused_ms": 0.654, "par_saving_ms": 0.005, "fused_saving_ms": 0.053},
+      {"layer": 8, "seq_ms": 0.705, "par_ms": 0.699, "fused_ms": 0.646, "par_saving_ms": 0.006, "fused_saving_ms": 0.059},
+      {"layer": 9, "seq_ms": 0.705, "par_ms": 0.700, "fused_ms": 0.650, "par_saving_ms": 0.005, "fused_saving_ms": 0.055},
+      {"layer": 10, "seq_ms": 0.700, "par_ms": 0.695, "fused_ms": 0.644, "par_saving_ms": 0.005, "fused_saving_ms": 0.056},
+      {"layer": 11, "seq_ms": 0.706, "par_ms": 0.701, "fused_ms": 0.653, "par_saving_ms": 0.005, "fused_saving_ms": 0.052},
+      {"layer": 12, "seq_ms": 0.701, "par_ms": 0.696, "fused_ms": 0.640, "par_saving_ms": 0.005, "fused_saving_ms": 0.061},
+      {"layer": 13, "seq_ms": 0.718, "par_ms": 0.714, "fused_ms": 0.657, "par_saving_ms": 0.004, "fused_saving_ms": 0.061},
+      {"layer": 14, "seq_ms": 0.701, "par_ms": 0.697, "fused_ms": 0.642, "par_saving_ms": 0.004, "fused_saving_ms": 0.060},
+      {"layer": 15, "seq_ms": 0.709, "par_ms": 0.704, "fused_ms": 0.656, "par_saving_ms": 0.005, "fused_saving_ms": 0.053},
+      {"layer": 16, "seq_ms": 0.700, "par_ms": 0.697, "fused_ms": 0.641, "par_saving_ms": 0.004, "fused_saving_ms": 0.059},
+      {"layer": 17, "seq_ms": 0.709, "par_ms": 0.704, "fused_ms": 0.656, "par_saving_ms": 0.005, "fused_saving_ms": 0.053},
+      {"layer": 18, "seq_ms": 0.702, "par_ms": 0.697, "fused_ms": 0.643, "par_saving_ms": 0.004, "fused_saving_ms": 0.059},
+      {"layer": 19, "seq_ms": 0.713, "par_ms": 0.709, "fused_ms": 0.653, "par_saving_ms": 0.004, "fused_saving_ms": 0.060}
+    ]
+  },
+  "batch_sweep": [
+    {"batch_size": 1, "sequence_length": 512, "sequential_ms": 15.03, "parallel_ms": 15.02, "fused_ms": 13.77, "parallel_speedup": 1.001, "fused_speedup": 1.092},
+    {"batch_size": 4, "sequence_length": 512, "sequential_ms": 42.61, "parallel_ms": 42.54, "fused_ms": 44.74, "parallel_speedup": 1.001, "fused_speedup": 0.952},
+    {"batch_size": 8, "sequence_length": 512, "sequential_ms": 86.61, "parallel_ms": 87.35, "fused_ms": 87.82, "parallel_speedup": 0.991, "fused_speedup": 0.986},
+    {"batch_size": 16, "sequence_length": 512, "sequential_ms": 175.08, "parallel_ms": 175.96, "fused_ms": 163.89, "parallel_speedup": 0.995, "fused_speedup": 1.068},
+    {"batch_size": 32, "sequence_length": 512, "sequential_ms": 382.49, "parallel_ms": 384.86, "fused_ms": 352.00, "parallel_speedup": 0.994, "fused_speedup": 1.087},
+    {"batch_size": 64, "sequence_length": 512, "sequential_ms": 724.85, "parallel_ms": 723.88, "fused_ms": 712.83, "parallel_speedup": 1.001, "fused_speedup": 1.017}
+  ],
+  "compiled_graph": {
+    "mask": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    "modes": ["parallel_fused", "parallel_fused", "parallel_fused", "parallel_fused", "parallel_fused", "parallel_fused", "parallel_fused", "parallel_fused", "parallel_fused", "parallel_fused", "parallel_fused", "parallel_fused", "parallel_fused", "parallel_fused", "parallel_fused", "parallel_fused", "parallel_fused", "parallel_fused", "parallel_fused", "parallel_fused"],
+    "n_parallel": 20,
+    "method": "timing_only",
+    "predicted_saving_ms": 1.120,
+    "measured_sequential_ms": 16.15,
+    "measured_compiled_ms": 14.68,
+    "measured_speedup": 1.100,
+    "note": "At B=1, all-fused is optimal. At B=4-8, sequential is better. Workload-dependent."
+  },
+  "greedy_verification": {
+    "n_layers": 20,
+    "method": "timing_only_uniform",
+    "match": true,
+    "brute_force_time_s": 2.125,
+    "greedy_time_ms": 0.162,
+    "speedup": 13138
+  },
+  "workload_dependent_optimal": {
+    "B1": {"strategy": "all_fused", "speedup": 1.092},
+    "B4": {"strategy": "all_sequential", "speedup": 1.0, "note": "fused is 0.95x (slower)"},
+    "B8": {"strategy": "all_sequential", "speedup": 1.0, "note": "fused is 0.99x (slower)"},
+    "B16": {"strategy": "all_fused", "speedup": 1.068},
+    "B32": {"strategy": "all_fused", "speedup": 1.087},
+    "B64": {"strategy": "all_fused", "speedup": 1.017}
+  },
+  "observations": [
+    "Per-layer profile is perfectly uniform — no layer is special on Blackwell",
+    "Fused saves a consistent ~0.055ms/layer (8%) at B=1 by reducing kernel launches",
+    "At B=4-8, the fused GEMM is counterproductive (larger matrix, worse cache behavior at this shape)",
+    "Parallel alone (without fusion) gives negligible benefit (<1%) at all batch sizes",
+    "The compiler's value on Blackwell is workload-routing (batch-dependent), not layer-selection",
+    "Greedy matches brute-force exactly because per-layer savings are uniform"
+  ]
+}
