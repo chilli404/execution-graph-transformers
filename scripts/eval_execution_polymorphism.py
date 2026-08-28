@@ -46,7 +46,7 @@ def main():
     parser.add_argument("--config", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--batch_size", type=int, default=2)
-    parser.add_argument("--sequence_lengths", type=int, nargs="+", default=None)
+    parser.add_argument("--sequence_lengths", type=int, nargs="+", default=[128, 512, 2048])
     parser.add_argument("--warmup", type=int, default=10)
     parser.add_argument("--repeats", type=int, default=50)
     args = parser.parse_args()
@@ -54,8 +54,7 @@ def main():
     model, cfg = load_model(args.ckpt, args.config, device)
     torch.manual_seed(2026)
     ctx_len = cfg["model"]["ctx_len"]
-    sequence_lengths = args.sequence_lengths or [
-        l for l in [128, 512, 1024, 2048] if l <= ctx_len]
+    sequence_lengths = [l for l in args.sequence_lengths if l <= ctx_len]
     print(f"Model: {model.num_params()/1e6:.1f}M on {device}, ctx={ctx_len}", flush=True)
     print(f"Sequence lengths: {sequence_lengths}", flush=True)
     latency = {}
