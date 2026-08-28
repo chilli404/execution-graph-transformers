@@ -46,15 +46,20 @@ def main():
     parser.add_argument("--config", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--batch_size", type=int, default=2)
-    parser.add_argument("--sequence_lengths", type=int, nargs="+", default=[128, 512, 2048])
+    parser.add_argument("--sequence_lengths", type=int, nargs="+", default=None)
     parser.add_argument("--warmup", type=int, default=10)
     parser.add_argument("--repeats", type=int, default=50)
     args = parser.parse_args()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model, cfg = load_model(args.ckpt, args.config, device)
     torch.manual_seed(2026)
+    ctx_len = cfg["model"]["ctx_len"]
+    sequence_lengths = args.sequence_lengths or [
+        l for l in [128, 512, 1024, 2048] if l <= ctx_len]
+    print(f"Model: {model.num_params()/1e6:.1f}M on {device}, ctx={ctx_len}", flush=True)
+    print(f"Sequence lengths: {sequence_lengths}", flush=True)
     latency = {}
-    for length in args.sequence_lengths:
+    for length in sequence_lengths:
         inputs = torch.randint(
             0,
             cfg["model"]["vocab_size"],
@@ -74,6 +79,9 @@ def main():
             "parallel_cuda_speedup": sequential / parallel_cuda,
             "parallel_fused_speedup": sequential / parallel_fused,
         }
+        print(f"  T={length}: seq={sequential*1000:.2f}ms par={parallel*1000:.2f}ms "
+              f"fused={parallel_fused*1000:.2f}ms ({sequential/parallel_fused:.3f}x)",
+              flush=True)
     agreement_inputs = torch.randint(
         0,
         cfg["model"]["vocab_size"],
@@ -97,14 +105,15 @@ def main():
         F.kl_div(parallel_logprob, sequential_probability, reduction="batchmean")
         + F.kl_div(sequential_logprob, parallel_probability, reduction="batchmean")
     ) / 2
+    agreement = float(
+        (sequential_logits.argmax(dim=-1) == parallel_logits.argmax(dim=-1)).float().mean())
+    print(f"Agreement: {agreement:.4f} | KL: {float(symmetric_kl):.4f}", flush=True)
     result = {
         "checkpoint": args.ckpt,
         "device": str(device),
         "batch_size": args.batch_size,
         "latency": latency,
-        "argmax_agreement": float(
-            (sequential_logits.argmax(dim=-1) == parallel_logits.argmax(dim=-1)).float().mean()
-        ),
+        "argmax_agreement": agreement,
         "parallel_cuda_max_logit_difference": float(
             torch.max(torch.abs(parallel_cuda_logits - parallel_logits))
         ),

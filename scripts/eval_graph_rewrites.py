@@ -101,7 +101,8 @@ def main():
     rows = []
     masks = graph_masks(
         cfg["model"]["n_layer"], layer_defects, args.num_random_graphs)
-    for bits in masks:
+    print(f"Evaluating {len(masks)} graph configurations...", flush=True)
+    for graph_idx, bits in enumerate(masks):
         mask = ["parallel" if bit else "sequential" for bit in bits]
         model.cfg.execution_mode = mask
         bpb = evaluate_bpb(
@@ -126,7 +127,7 @@ def main():
         ) / 2
         selected_defects = layer_defects[np.asarray(bits, dtype=bool)]
         predicted_defect = float(np.sqrt(np.sum(selected_defects**2)))
-        rows.append({
+        row = {
             "bits": list(bits),
             "mask": mask,
             "parallel_layers": int(sum(bits)),
@@ -137,7 +138,11 @@ def main():
                 (logits.argmax(dim=-1) == sequential_logits.argmax(dim=-1)).float().mean()
             ),
             "latency_seconds": latency(model, sample, mask),
-        })
+        }
+        rows.append(row)
+        print(f"  [{graph_idx+1}/{len(masks)}] {sum(bits)}/L par | "
+              f"bpb={bpb:.4f} kl={float(symmetric_kl):.4f} "
+              f"agree={row['argmax_agreement']:.3f}", flush=True)
     sequential_bpb = next(row["val_bpb"] for row in rows if sum(row["bits"]) == 0)
     for row in rows:
         row["bpb_degradation"] = row["val_bpb"] - sequential_bpb
