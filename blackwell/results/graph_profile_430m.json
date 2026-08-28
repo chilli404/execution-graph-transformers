@@ -1,6 +1,6 @@
 {
   "hardware": {
-    "gpu": "NVIDIA RTX PRO 6000 Blackwell",
+    "gpu": "NVIDIA RTX PRO 6000 Blackwell Max-Q",
     "backend": "cuda",
     "memory_gb": 96,
     "pytorch_version": "2.8.0",

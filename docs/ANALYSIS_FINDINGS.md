@@ -248,7 +248,7 @@ One checkpoint, three hardware platforms, three different optimal execution stra
 |----------|--------------|---------|----------------|
 | L40S (CUDA, paper) | All-parallel-fused | 1.20-1.54x | Uniform — same graph always wins |
 | M4 Max (MPS) | Mixed 7/12 parallel | 1.14x | Per-layer — specific layers benefit |
-| RTX PRO 6000 Blackwell | Workload-dependent | 1.00-1.09x | Per-batch — depends on concurrency |
+| RTX PRO 6000 Blackwell Max-Q | Workload-dependent | 1.00-1.09x | Per-batch — depends on concurrency |
 
 This directly validates the paper's thesis: **the same trained checkpoint benefits from different execution DAGs on different hardware.** The graph compiler is the mechanism that bridges this gap.
 
