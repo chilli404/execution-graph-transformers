@@ -111,8 +111,16 @@ The method, theory probes, cross-corpus results, aggregate graph compiler, promp
 ## Quick start
 
 ```bash
-python -m pip install torch transformers safetensors numpy scipy matplotlib pyyaml tokenizers datasets
-PYTHONPATH=src python -m pytest src scripts -q
+uv sync --extra dev
+uv run pytest -q
+uv run python scripts/make_execution_paper_figures.py
+```
+
+Or without uv:
+
+```bash
+python -m pip install -e ".[dev]"
+pytest -q
 python scripts/make_execution_paper_figures.py
 ```
 
