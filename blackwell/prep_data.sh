@@ -1,34 +1,57 @@
 #!/bin/bash
-# Prepare TinyStories training data (tokenizer + shards)
+# Prepare training data (tokenizer + shards)
 # Queue with: tsp bash blackwell/prep_data.sh
 #
-# Downloads TinyStories from HuggingFace, trains BPE-8192 tokenizer,
-# writes uint16 shards. ~10 minutes, ~2GB disk.
+# Downloads dataset from HuggingFace, trains BPE-8192 tokenizer,
+# writes uint16 shards.
+#
+# Set DATASET below: "climbmix" (default, matches paper) or "tinystories"
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-echo "$(date): Preparing TinyStories data"
+DATASET="${1:-climbmix}"
+
+echo "$(date): Preparing $DATASET data"
 
 uv run python -c "
+import sys
 from pathlib import Path
 from datasets import load_dataset
 
 from fogen.data import train_tokenizer, write_shards, load_tokenizer
 
-out_base = Path('data/tinystories/bpe8192')
+dataset = '$DATASET'
+
+if dataset == 'climbmix':
+    out_base = Path('data/climbmix/bpe8192')
+    print('Downloading ClimbMix (streaming, first 100M tokens worth)...')
+    ds = load_dataset('karpathy/climbmix-400b-shuffle', split='train', streaming=True)
+    # ClimbMix is huge (400B tokens). Take enough for ~100M tokens after BPE.
+    # Rough estimate: 1 doc ~ 500 tokens, so 200k docs ~ 100M tokens
+    docs = []
+    for i, row in enumerate(ds):
+        docs.append(row['text'])
+        if i >= 200_000:
+            break
+    print(f'  Downloaded {len(docs)} documents')
+elif dataset == 'tinystories':
+    out_base = Path('data/tinystories/bpe8192')
+    print('Downloading TinyStories...')
+    ds = load_dataset('roneneldan/TinyStories', split='train')
+    docs = [row['text'] for row in ds]
+    print(f'  {len(docs)} documents')
+else:
+    print(f'Unknown dataset: {dataset}')
+    sys.exit(1)
+
 tok_dir = out_base
 shard_dir = out_base / 'shards'
-
-# Download
-print('Downloading TinyStories...')
-ds = load_dataset('roneneldan/TinyStories', split='train')
-print(f'  {len(ds)} documents')
 
 # Train tokenizer
 if not (tok_dir / 'tokenizer.json').exists():
     print('Training BPE-8192 tokenizer...')
     tok_dir.mkdir(parents=True, exist_ok=True)
-    train_tokenizer((doc['text'] for doc in ds), vocab_size=8192, out_dir=str(tok_dir))
+    train_tokenizer(iter(docs), vocab_size=8192, out_dir=str(tok_dir))
     print('  Done')
 else:
     print('Tokenizer already exists, skipping')
@@ -38,7 +61,7 @@ if not shard_dir.exists() or not list(shard_dir.glob('shard_*.bin')):
     print('Tokenizing and writing shards...')
     tokenizer = load_tokenizer(str(tok_dir))
     manifest = write_shards(
-        (doc['text'] for doc in ds),
+        iter(docs),
         tokenizer,
         out_dir=str(shard_dir),
         shard_tokens=50_000_000,
@@ -51,4 +74,3 @@ print('Done. Data at:', out_base)
 "
 
 echo "$(date): Data prep complete"
-echo "Update config paths to: data/tinystories/bpe8192"
