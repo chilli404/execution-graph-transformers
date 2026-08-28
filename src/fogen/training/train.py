@@ -111,6 +111,8 @@ def main():
     ap.add_argument("--out", default=None)
     ap.add_argument("--init-ckpt")
     ap.add_argument("--no-wandb", action="store_true")
+    ap.add_argument("--mlflow", action="store_true",
+                    help="Use MLflow for experiment tracking")
     args = ap.parse_args()
 
     cfg = yaml.safe_load(open(args.config))
@@ -193,6 +195,20 @@ def main():
         except Exception as e:
             print(f"wandb disabled: {e}")
 
+    mlflow_run = None
+    if args.mlflow:
+        try:
+            import mlflow
+            mlflow.set_experiment(cfg.get("wandb_project", "fogen-phase"))
+            mlflow_run = mlflow.start_run(run_name=out.name)
+            mlflow.log_params({k: v for k, v in {**cfg, "seed": args.seed}.items()
+                               if not isinstance(v, dict)})
+            mlflow.log_params({f"model.{k}": v for k, v in cfg.get("model", {}).items()})
+            mlflow.log_params({f"train.{k}": v for k, v in cfg.get("train", {}).items()})
+        except Exception as e:
+            print(f"mlflow disabled: {e}")
+            mlflow_run = None
+
     probe_log = (out / "probe_log.jsonl").open("a")
     train_log = (out / "train_log.jsonl").open("a")
 
@@ -206,6 +222,10 @@ def main():
         if wandb_run:
             wandb_run.log({f"probe/{a['probe']}/{a['split']}/acc": a["argmax_acc"]
                            for a in aggs} | {"step": step}, step=step)
+        if mlflow_run:
+            import mlflow
+            mlflow.log_metrics({f"probe/{a['probe']}/{a['split']}/acc": a["argmax_acc"]
+                                for a in aggs}, step=step)
         model.train()
 
     model.train()
@@ -289,10 +309,23 @@ def main():
             train_log.write(json.dumps(rec) + "\n"); train_log.flush()
             if wandb_run:
                 wandb_run.log({"train/loss": rec["loss"]}, step=step)
+            if mlflow_run:
+                import mlflow
+                metrics = {"train/loss": rec["loss"]}
+                if execution_metrics is not None:
+                    metrics.update({f"execution/{k}": v.item()
+                                    for k, v in execution_metrics.items()})
+                mlflow.log_metrics(metrics, step=step)
             print(rec)
 
     if wandb_run:
         wandb_run.finish()
+    if mlflow_run:
+        import mlflow
+        mlflow.log_artifact(str(out / "train_log.jsonl"))
+        mlflow.log_artifact(str(out / "probe_log.jsonl"))
+        mlflow.log_artifact(str(out / "config_used.yaml"))
+        mlflow.end_run()
     print(f"done in {(time.time()-t0)/60:.1f} min -> {out}")
 
 
