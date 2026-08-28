@@ -414,8 +414,47 @@ def main():
         print(f"  Measured: seq={t_seq_c:.2f}ms, compiled={t_compiled:.2f}ms "
               f"({t_seq_c / t_compiled:.3f}x)")
     else:
-        print(f"\nSkipping graph compilation: graph_data has {len(graph_data['layer_defects'])} "
-              f"layers but model has {n_layer}")
+        print(f"\nGraph data has {len(graph_data['layer_defects'])} layers, "
+              f"model has {n_layer} — using timing-only compilation")
+        # Without defect data for this layer count, compile using timing alone:
+        # parallelize all layers where parallel/fused is faster (no quality budget)
+        par_savings = np.array([row["par_saving_ms"] for row in layer_rows])
+        fused_savings = np.array([row["fused_saving_ms"] for row in layer_rows])
+        best_savings = np.maximum(par_savings, fused_savings)
+
+        optimal_mask = [1 if best_savings[i] > 0.01 else 0 for i in range(n_layer)]
+        optimal_modes = []
+        for i in range(n_layer):
+            if not optimal_mask[i]:
+                optimal_modes.append("sequential")
+            elif fused_savings[i] > par_savings[i]:
+                optimal_modes.append("parallel_fused")
+            else:
+                optimal_modes.append("parallel")
+
+        compiled_graph = {
+            "mask": optimal_mask,
+            "modes": optimal_modes,
+            "parallel_layers": [i for i, b in enumerate(optimal_mask) if b],
+            "sequential_layers": [i for i, b in enumerate(optimal_mask) if not b],
+            "n_parallel": sum(optimal_mask),
+            "method": "timing_only",
+            "note": "No defect data for this layer count; selected by latency gain only",
+        }
+
+        print(f"\nTiming-only compiled graph: {compiled_graph['parallel_layers']}")
+        print(f"  Modes: {optimal_modes}")
+        total_saving = sum(best_savings[i] for i in range(n_layer) if optimal_mask[i])
+        print(f"  Total predicted saving: {total_saving:.3f}ms")
+
+        idx_c = torch.randint(0, cfg["vocab_size"], (primary_batch, T), device=device)
+        t_compiled = bench_full(model, idx_c, optimal_modes, device)
+        t_seq_c = bench_full(model, idx_c, ["sequential"] * n_layer, device)
+        compiled_graph["measured_sequential_ms"] = round(t_seq_c, 3)
+        compiled_graph["measured_compiled_ms"] = round(t_compiled, 3)
+        compiled_graph["measured_speedup"] = round(t_seq_c / t_compiled, 4)
+        print(f"  Measured: seq={t_seq_c:.2f}ms, compiled={t_compiled:.2f}ms "
+              f"({t_seq_c / t_compiled:.3f}x)")
 
     # --- Output ---
     hw_info = {"backend": device, "pytorch_version": torch.__version__,
