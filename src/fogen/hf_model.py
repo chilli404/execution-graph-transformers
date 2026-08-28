@@ -45,10 +45,15 @@ class FogenForCausalLM(PreTrainedModel, GenerationMixin):
     main_input_name = "input_ids"
     _tied_weights_keys = {}
     all_tied_weights_keys = {}
+    _supports_cache_class = False
 
     def __init__(self, config):
         super().__init__(config)
         self.model = GPT(config.model_config())
+        self.post_init()
+
+    def _init_weights(self, module):
+        pass
 
     def get_input_embeddings(self):
         return self.model.wte
