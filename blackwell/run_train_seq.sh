@@ -5,7 +5,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 echo "$(date): Starting 430M sequential specialist training"
-uv run python -m fogen.training.train \
+uv run python -u -m fogen.training.train \
     --config blackwell/configs/scale430m_seq_full.yaml \
     --seed 42 \
     --out runs/430m_seq_full \
