@@ -1,15 +1,20 @@
-"""Measure per-layer and end-to-end latency on Apple Silicon MPS.
+"""Measure per-layer and end-to-end latency, then compile the optimal graph.
 
 Compiles the optimal execution graph for the current hardware using
 the defect-budget graph compiler with measured latency savings.
+Supports CUDA, MPS, and CPU backends.
 
 Usage:
-    PYTHONPATH=src python scripts/eval_mps_graph.py \
+    uv run python scripts/eval_mps_graph.py \
         --graph_data results/data/climbmix_graphs.json \
-        --output results/data/mps_m4max_graph.json \
+        --output results/data/blackwell_graph.json \
         --batch_size 1 --sequence_length 512
 
-Requires: PyTorch with MPS support (macOS 12.3+, Apple Silicon).
+    # Force a specific device:
+    uv run python scripts/eval_mps_graph.py \
+        --graph_data results/data/climbmix_graphs.json \
+        --output results/data/mps_graph.json \
+        --device mps
 """
 
 import argparse
@@ -138,28 +143,35 @@ def build_model(cfg, device):
     return Model().to(device).eval()
 
 
-def measure_layer(block, x, ve, cos, sin, mode, warmup=20, repeats=100):
+def synchronize(device):
+    if device == "cuda":
+        torch.cuda.synchronize()
+    elif device == "mps":
+        torch.mps.synchronize()
+
+
+def measure_layer(block, x, ve, cos, sin, mode, device, warmup=20, repeats=100):
     fn = block.forward_sequential if mode == "sequential" else block.forward_parallel
     with torch.no_grad():
         for _ in range(warmup):
             fn(x, ve, cos, sin)
-        torch.mps.synchronize()
+        synchronize(device)
         t0 = time.perf_counter()
         for _ in range(repeats):
             fn(x, ve, cos, sin)
-        torch.mps.synchronize()
+        synchronize(device)
     return (time.perf_counter() - t0) / repeats
 
 
-def bench_full(model, idx, modes, warmup=10, repeats=50):
+def bench_full(model, idx, modes, device, warmup=10, repeats=50):
     with torch.no_grad():
         for _ in range(warmup):
             model(idx, modes=modes)
-        torch.mps.synchronize()
+        synchronize(device)
         t0 = time.perf_counter()
         for _ in range(repeats):
             model(idx, modes=modes)
-        torch.mps.synchronize()
+        synchronize(device)
     return (time.perf_counter() - t0) / repeats * 1000
 
 
@@ -167,14 +179,22 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--graph_data", required=True)
     parser.add_argument("--output", required=True)
+    parser.add_argument("--device", default=None,
+                        help="Force device (cuda/mps/cpu). Auto-detects if omitted.")
     parser.add_argument("--batch_size", type=int, default=1)
     parser.add_argument("--sequence_length", type=int, default=512)
     parser.add_argument("--warmup", type=int, default=20)
     parser.add_argument("--repeats", type=int, default=100)
     args = parser.parse_args()
 
-    assert torch.backends.mps.is_available(), "MPS not available"
-    device = "mps"
+    if args.device:
+        device = args.device
+    elif torch.cuda.is_available():
+        device = "cuda"
+    elif torch.backends.mps.is_available():
+        device = "mps"
+    else:
+        device = "cpu"
 
     with open(args.graph_data) as f:
         graph_data = json.load(f)
@@ -219,9 +239,9 @@ def main():
     for i, block in enumerate(model.blocks):
         x_i, ve_i = layer_inputs[i]
         t_seq = measure_layer(block, x_i, ve_i, cos, sin, "sequential",
-                              args.warmup, args.repeats) * 1000
+                              device, args.warmup, args.repeats) * 1000
         t_par = measure_layer(block, x_i, ve_i, cos, sin, "parallel",
-                              args.warmup, args.repeats) * 1000
+                              device, args.warmup, args.repeats) * 1000
         saving = t_seq - t_par
         layer_rows.append({
             "layer": i,
@@ -253,8 +273,8 @@ def main():
     actual = [r["symmetric_kl"] - baseline_kl for r in multi]
     alpha = fit_composition_scale(predicted, actual)
 
-    mps_savings = np.array([row["saving_ms"] for row in layer_rows])
-    result = compile_graph(effects, mps_savings, 999.0, alpha)
+    hw_savings = np.array([row["saving_ms"] for row in layer_rows])
+    result = compile_graph(effects, hw_savings, 999.0, alpha)
     optimal_mask = result["bits"]
     optimal_modes = ["parallel" if b else "sequential" for b in optimal_mask]
 
@@ -264,21 +284,26 @@ def main():
 
     # End-to-end benchmark
     print("\nEnd-to-end benchmarks...")
-    t_seq = bench_full(model, idx, ["sequential"] * n_layer)
-    t_par = bench_full(model, idx, ["parallel"] * n_layer)
-    t_opt = bench_full(model, idx, optimal_modes)
+    t_seq = bench_full(model, idx, ["sequential"] * n_layer, device)
+    t_par = bench_full(model, idx, ["parallel"] * n_layer, device)
+    t_opt = bench_full(model, idx, optimal_modes, device)
 
     print(f"  Sequential:   {t_seq:.2f}ms")
     print(f"  All-parallel: {t_par:.2f}ms ({t_seq / t_par:.3f}x)")
-    print(f"  MPS-compiled: {t_opt:.2f}ms ({t_seq / t_opt:.3f}x)")
+    print(f"  Compiled:     {t_opt:.2f}ms ({t_seq / t_opt:.3f}x)")
+
+    import platform
+    hw_info = {"backend": device, "pytorch_version": torch.__version__,
+               "os": platform.system()}
+    if device == "cuda":
+        hw_info["gpu"] = torch.cuda.get_device_name(0)
+        hw_info["gpu_memory_gb"] = round(
+            torch.cuda.get_device_properties(0).total_mem / 1e9, 1)
+    elif device == "mps":
+        hw_info["chip"] = "Apple Silicon"
 
     output = {
-        "hardware": {
-            "chip": "Apple M4 Max",
-            "backend": "MPS",
-            "pytorch_version": torch.__version__,
-            "os": "Darwin",
-        },
+        "hardware": hw_info,
         "model": cfg,
         "optimal_graph": {
             "mask": optimal_mask,
