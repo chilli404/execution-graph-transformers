@@ -1,24 +1,33 @@
 """Measure per-layer and end-to-end latency, then compile the optimal graph.
 
-Compiles the optimal execution graph for the current hardware using
-the defect-budget graph compiler with measured latency savings.
+Profiles sequential, parallel, and fused execution modes across batch sizes.
+Compiles the optimal execution graph using the defect-budget graph compiler
+with measured hardware-specific latency savings.
+
 Supports CUDA, MPS, and CPU backends.
 
 Usage:
+    # 120M model on auto-detected device:
     uv run python scripts/eval_mps_graph.py \
         --graph_data results/data/climbmix_graphs.json \
-        --output results/data/blackwell_graph.json \
-        --batch_size 1 --sequence_length 512
+        --output blackwell/results/graph_profile.json
 
-    # Force a specific device:
+    # 430M shape (no graph_data needed for pure timing):
     uv run python scripts/eval_mps_graph.py \
         --graph_data results/data/climbmix_graphs.json \
-        --output results/data/mps_graph.json \
-        --device mps
+        --output blackwell/results/graph_profile_430m.json \
+        --d_model 1152 --n_head 18 --n_layer 20
+
+    # Specific device and batch sweep:
+    uv run python scripts/eval_mps_graph.py \
+        --graph_data results/data/climbmix_graphs.json \
+        --output results.json \
+        --device cuda --batch_sizes 1 4 8 16 32
 """
 
 import argparse
 import json
+import platform
 import time
 
 import numpy as np
@@ -82,6 +91,7 @@ def build_model(cfg, device):
             super().__init__()
             self.attn = Attention(layer_idx)
             self.mlp = MLP()
+            self._fused_weight = None
 
         def forward_sequential(self, x, ve, cos, sin):
             n = F.rms_norm(x, (d_model,))
@@ -94,9 +104,41 @@ def build_model(cfg, device):
             a = self.attn(n, ve, cos, sin)
             return x + a + self.mlp(n)
 
+        def forward_fused(self, x, ve, cos, sin):
+            B, T, C = x.shape
+            n = F.rms_norm(x, (d_model,))
+            if self._fused_weight is None:
+                self._fused_weight = torch.cat([
+                    self.attn.wq.weight,
+                    self.attn.wk.weight,
+                    self.attn.wv.weight,
+                    self.mlp.up.weight,
+                ]).detach()
+            projected = F.linear(n, self._fused_weight)
+            q_raw, k_raw, v_raw, mlp_h = projected.split(
+                [d_model, d_model, d_model, 4 * d_model], dim=-1)
+            q = q_raw.view(B, T, n_head, head_dim).transpose(1, 2)
+            k = k_raw.view(B, T, n_head, head_dim).transpose(1, 2)
+            v = v_raw.view(B, T, n_head, head_dim).transpose(1, 2)
+            if self.attn.ve_lambdas is not None and ve is not None:
+                ve_r = ve.view(B, T, n_head, head_dim).transpose(1, 2)
+                v = self.attn.ve_lambdas[0] * v + self.attn.ve_lambdas[1] * ve_r
+            q1, q2 = q.chunk(2, dim=-1)
+            q = torch.cat([q1 * cos - q2 * sin, q1 * sin + q2 * cos], dim=-1)
+            k1, k2 = k.chunk(2, dim=-1)
+            k = torch.cat([k1 * cos - k2 * sin, k1 * sin + k2 * cos], dim=-1)
+            q = F.rms_norm(q, (head_dim,))
+            k = F.rms_norm(k, (head_dim,))
+            y = F.scaled_dot_product_attention(q, k, v, is_causal=True)
+            a = self.attn.wo(y.transpose(1, 2).reshape(B, T, C))
+            m = self.mlp.down(F.relu(mlp_h).square())
+            return x + a + m
+
         def forward(self, x, ve, cos, sin, mode="sequential"):
             if mode == "parallel":
                 return self.forward_parallel(x, ve, cos, sin)
+            if mode == "parallel_fused":
+                return self.forward_fused(x, ve, cos, sin)
             return self.forward_sequential(x, ve, cos, sin)
 
     class Model(nn.Module):
@@ -151,7 +193,12 @@ def synchronize(device):
 
 
 def measure_layer(block, x, ve, cos, sin, mode, device, warmup=20, repeats=100):
-    fn = block.forward_sequential if mode == "sequential" else block.forward_parallel
+    fns = {
+        "sequential": block.forward_sequential,
+        "parallel": block.forward_parallel,
+        "parallel_fused": block.forward_fused,
+    }
+    fn = fns[mode]
     with torch.no_grad():
         for _ in range(warmup):
             fn(x, ve, cos, sin)
@@ -176,13 +223,23 @@ def bench_full(model, idx, modes, device, warmup=10, repeats=50):
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--graph_data", required=True)
-    parser.add_argument("--output", required=True)
+    parser = argparse.ArgumentParser(
+        description="Profile execution graph latency and compile optimal graph")
+    parser.add_argument("--graph_data", required=True,
+                        help="Path to graph results JSON (e.g. climbmix_graphs.json)")
+    parser.add_argument("--output", required=True,
+                        help="Output JSON path")
     parser.add_argument("--device", default=None,
                         help="Force device (cuda/mps/cpu). Auto-detects if omitted.")
-    parser.add_argument("--batch_size", type=int, default=1)
+    parser.add_argument("--batch_sizes", type=int, nargs="+", default=[1, 4, 8, 16],
+                        help="Batch sizes for sweep")
     parser.add_argument("--sequence_length", type=int, default=512)
+    parser.add_argument("--d_model", type=int, default=None,
+                        help="Override model width (default: from graph_data or 704)")
+    parser.add_argument("--n_head", type=int, default=None,
+                        help="Override head count")
+    parser.add_argument("--n_layer", type=int, default=None,
+                        help="Override layer count")
     parser.add_argument("--warmup", type=int, default=20)
     parser.add_argument("--repeats", type=int, default=100)
     args = parser.parse_args()
@@ -199,28 +256,31 @@ def main():
     with open(args.graph_data) as f:
         graph_data = json.load(f)
 
-    n_layer = len(graph_data["layer_defects"])
+    n_layer = args.n_layer or len(graph_data["layer_defects"])
     cfg = {
         "vocab_size": 8192,
         "n_layer": n_layer,
-        "d_model": 704,
-        "n_head": 8,
-        "ctx_len": 1024,
+        "d_model": args.d_model or 704,
+        "n_head": args.n_head or 8,
+        "ctx_len": max(1024, args.sequence_length),
     }
 
-    print(f"Building {cfg['n_layer']}-layer model on {device}...")
+    print(f"Building model on {device}...")
+    print(f"  layers={cfg['n_layer']}, d_model={cfg['d_model']}, "
+          f"n_head={cfg['n_head']}, ctx={cfg['ctx_len']}")
     model = build_model(cfg, device)
     params = sum(p.numel() for p in model.parameters())
-    print(f"Parameters: {params / 1e6:.1f}M")
+    print(f"  Parameters: {params / 1e6:.1f}M")
 
     torch.manual_seed(2026)
-    idx = torch.randint(
-        0, cfg["vocab_size"], (args.batch_size, args.sequence_length), device=device
-    )
-    cos = model.rope_cos[:, :, : args.sequence_length]
-    sin = model.rope_sin[:, :, : args.sequence_length]
+    T = args.sequence_length
+    primary_batch = args.batch_sizes[0]
 
-    # Collect per-layer activations
+    # --- Per-layer profiling at primary batch size ---
+    idx = torch.randint(0, cfg["vocab_size"], (primary_batch, T), device=device)
+    cos = model.rope_cos[:, :, :T]
+    sin = model.rope_sin[:, :, :T]
+
     with torch.no_grad():
         x = F.rms_norm(model.wte(idx), (cfg["d_model"],))
         layer_inputs = []
@@ -233,8 +293,10 @@ def main():
             layer_inputs.append((x.clone(), ve))
             x = block.forward_sequential(x, ve, cos, sin)
 
-    # Measure per-layer latency
-    print(f"\nMeasuring per-layer latency (B={args.batch_size}, T={args.sequence_length})...")
+    print(f"\nPer-layer latency (B={primary_batch}, T={T}):")
+    print(f"  {'Layer':>5} | {'Seq':>8} | {'Par':>8} | {'Fused':>8} | {'Par save':>9} | {'Fused save':>10}")
+    print(f"  {'-'*5}-+-{'-'*8}-+-{'-'*8}-+-{'-'*8}-+-{'-'*9}-+-{'-'*10}")
+
     layer_rows = []
     for i, block in enumerate(model.blocks):
         x_i, ve_i = layer_inputs[i]
@@ -242,59 +304,122 @@ def main():
                               device, args.warmup, args.repeats) * 1000
         t_par = measure_layer(block, x_i, ve_i, cos, sin, "parallel",
                               device, args.warmup, args.repeats) * 1000
-        saving = t_seq - t_par
+        t_fused = measure_layer(block, x_i, ve_i, cos, sin, "parallel_fused",
+                                device, args.warmup, args.repeats) * 1000
         layer_rows.append({
             "layer": i,
             "has_ve": has_ve(i, n_layer),
-            "seq_ms": round(t_seq, 3),
-            "par_ms": round(t_par, 3),
-            "saving_ms": round(saving, 3),
-            "defect": graph_data["layer_defects"][i],
-            "kl_effect": None,
+            "seq_ms": round(t_seq, 4),
+            "par_ms": round(t_par, 4),
+            "fused_ms": round(t_fused, 4),
+            "par_saving_ms": round(t_seq - t_par, 4),
+            "fused_saving_ms": round(t_seq - t_fused, 4),
         })
-        print(f"  Layer {i:2d}: seq={t_seq:.3f}ms  par={t_par:.3f}ms  saving={saving:+.3f}ms")
+        print(f"  {i:>5} | {t_seq:>7.3f}ms | {t_par:>7.3f}ms | {t_fused:>7.3f}ms | "
+              f"{t_seq - t_par:>+8.3f}ms | {t_seq - t_fused:>+9.3f}ms")
 
-    # Compute KL effects from graph data
-    rows = graph_data["rows"]
-    baseline_kl = next(r["symmetric_kl"] for r in rows if sum(r["bits"]) == 0)
-    for r in rows:
-        if sum(r["bits"]) == 1:
-            layer = r["bits"].index(1)
-            layer_rows[layer]["kl_effect"] = r["symmetric_kl"] - baseline_kl
+    # --- Batch size sweep (end-to-end) ---
+    print(f"\nBatch size sweep (T={T}):")
+    print(f"  {'B':>4} | {'Seq':>9} | {'Par':>9} | {'Fused':>9} | {'Par/Seq':>7} | {'Fused/Seq':>9}")
+    print(f"  {'-'*4}-+-{'-'*9}-+-{'-'*9}-+-{'-'*9}-+-{'-'*7}-+-{'-'*9}")
 
-    # Compile optimal graph
-    import sys
-    sys.path.insert(0, "src")
-    from fogen.execution_graph import compile_graph, fit_composition_scale, single_layer_effects
+    batch_sweep = []
+    for B in args.batch_sizes:
+        try:
+            idx_b = torch.randint(0, cfg["vocab_size"], (B, T), device=device)
+            all_seq = ["sequential"] * n_layer
+            all_par = ["parallel"] * n_layer
+            all_fused = ["parallel_fused"] * n_layer
 
-    effects = single_layer_effects(rows, "symmetric_kl")
-    multi = [r for r in rows if sum(r["bits"]) >= 2]
-    predicted = [sum(effects[i] * b for i, b in enumerate(r["bits"])) for r in multi]
-    actual = [r["symmetric_kl"] - baseline_kl for r in multi]
-    alpha = fit_composition_scale(predicted, actual)
+            t_s = bench_full(model, idx_b, all_seq, device, args.warmup // 2, args.repeats // 2)
+            t_p = bench_full(model, idx_b, all_par, device, args.warmup // 2, args.repeats // 2)
+            t_f = bench_full(model, idx_b, all_fused, device, args.warmup // 2, args.repeats // 2)
 
-    hw_savings = np.array([row["saving_ms"] for row in layer_rows])
-    result = compile_graph(effects, hw_savings, 999.0, alpha)
-    optimal_mask = result["bits"]
-    optimal_modes = ["parallel" if b else "sequential" for b in optimal_mask]
+            batch_sweep.append({
+                "batch_size": B,
+                "sequence_length": T,
+                "sequential_ms": round(t_s, 3),
+                "parallel_ms": round(t_p, 3),
+                "fused_ms": round(t_f, 3),
+                "parallel_speedup": round(t_s / t_p, 4),
+                "fused_speedup": round(t_s / t_f, 4),
+            })
+            print(f"  {B:>4} | {t_s:>8.2f}ms | {t_p:>8.2f}ms | {t_f:>8.2f}ms | "
+                  f"{t_s / t_p:>6.3f}x | {t_s / t_f:>8.3f}x")
+        except RuntimeError as e:
+            print(f"  {B:>4} | OOM: {e}")
+            break
 
-    print(f"\nOptimal graph: {[i for i, b in enumerate(optimal_mask) if b]}")
-    print(f"Predicted KL: {result['predicted_effect']:.4f}")
-    print(f"Predicted saving: {result['predicted_saving']:.3f}ms")
+    # --- Compile optimal graph using defect data ---
+    # Only possible if graph_data has matching layer count
+    compiled_graph = None
+    if len(graph_data["layer_defects"]) == n_layer:
+        import sys
+        sys.path.insert(0, "src")
+        from fogen.execution_graph import (
+            compile_graph_greedy, fit_composition_scale, single_layer_effects,
+        )
 
-    # End-to-end benchmark
-    print("\nEnd-to-end benchmarks...")
-    t_seq = bench_full(model, idx, ["sequential"] * n_layer, device)
-    t_par = bench_full(model, idx, ["parallel"] * n_layer, device)
-    t_opt = bench_full(model, idx, optimal_modes, device)
+        rows = graph_data["rows"]
+        baseline_kl = next(r["symmetric_kl"] for r in rows if sum(r["bits"]) == 0)
 
-    print(f"  Sequential:   {t_seq:.2f}ms")
-    print(f"  All-parallel: {t_par:.2f}ms ({t_seq / t_par:.3f}x)")
-    print(f"  Compiled:     {t_opt:.2f}ms ({t_seq / t_opt:.3f}x)")
+        for r in rows:
+            if sum(r["bits"]) == 1:
+                layer = r["bits"].index(1)
+                layer_rows[layer]["kl_effect"] = r["symmetric_kl"] - baseline_kl
 
-    import platform
+        effects = single_layer_effects(rows, "symmetric_kl")
+        multi = [r for r in rows if sum(r["bits"]) >= 2]
+        predicted = [sum(effects[i] * b for i, b in enumerate(r["bits"])) for r in multi]
+        actual = [r["symmetric_kl"] - baseline_kl for r in multi]
+        alpha = fit_composition_scale(predicted, actual)
+
+        # Use best available savings (fused if it helps, else parallel)
+        par_savings = np.array([row["par_saving_ms"] for row in layer_rows])
+        fused_savings = np.array([row["fused_saving_ms"] for row in layer_rows])
+        best_savings = np.maximum(par_savings, fused_savings)
+
+        result = compile_graph_greedy(effects, best_savings, 999.0, alpha)
+        optimal_mask = result["bits"]
+        optimal_modes = ["parallel" if b else "sequential" for b in optimal_mask]
+
+        # Choose fused for layers where fused > parallel
+        for i in range(n_layer):
+            if optimal_mask[i] and fused_savings[i] > par_savings[i]:
+                optimal_modes[i] = "parallel_fused"
+
+        compiled_graph = {
+            "mask": optimal_mask,
+            "modes": optimal_modes,
+            "parallel_layers": [i for i, b in enumerate(optimal_mask) if b],
+            "sequential_layers": [i for i, b in enumerate(optimal_mask) if not b],
+            "n_parallel": sum(optimal_mask),
+            "predicted_kl": result["predicted_effect"],
+            "predicted_saving_ms": result["predicted_saving"],
+            "composition_scale": alpha,
+        }
+
+        print(f"\nCompiled graph: {compiled_graph['parallel_layers']}")
+        print(f"  Modes: {optimal_modes}")
+        print(f"  Predicted KL: {result['predicted_effect']:.4f}")
+        print(f"  Predicted saving: {result['predicted_saving']:.3f}ms")
+
+        # Benchmark compiled graph
+        idx_c = torch.randint(0, cfg["vocab_size"], (primary_batch, T), device=device)
+        t_compiled = bench_full(model, idx_c, optimal_modes, device)
+        t_seq_c = bench_full(model, idx_c, ["sequential"] * n_layer, device)
+        compiled_graph["measured_sequential_ms"] = round(t_seq_c, 3)
+        compiled_graph["measured_compiled_ms"] = round(t_compiled, 3)
+        compiled_graph["measured_speedup"] = round(t_seq_c / t_compiled, 4)
+        print(f"  Measured: seq={t_seq_c:.2f}ms, compiled={t_compiled:.2f}ms "
+              f"({t_seq_c / t_compiled:.3f}x)")
+    else:
+        print(f"\nSkipping graph compilation: graph_data has {len(graph_data['layer_defects'])} "
+              f"layers but model has {n_layer}")
+
+    # --- Output ---
     hw_info = {"backend": device, "pytorch_version": torch.__version__,
-               "os": platform.system()}
+               "platform": platform.system()}
     if device == "cuda":
         hw_info["gpu"] = torch.cuda.get_device_name(0)
         props = torch.cuda.get_device_properties(0)
@@ -306,32 +431,16 @@ def main():
     output = {
         "hardware": hw_info,
         "model": cfg,
-        "optimal_graph": {
-            "mask": optimal_mask,
-            "modes": optimal_modes,
-            "parallel_layers": [i for i, b in enumerate(optimal_mask) if b],
-            "sequential_layers": [i for i, b in enumerate(optimal_mask) if not b],
-            "n_parallel": sum(optimal_mask),
-            "predicted_kl": result["predicted_effect"],
-            "composition_scale": alpha,
-        },
+        "model_params_m": round(params / 1e6, 1),
         "per_layer_measurements": {
-            "batch_size": args.batch_size,
-            "sequence_length": args.sequence_length,
+            "batch_size": primary_batch,
+            "sequence_length": T,
             "layers": layer_rows,
         },
-        "end_to_end_benchmarks": [
-            {
-                "batch_size": args.batch_size,
-                "sequence_length": args.sequence_length,
-                "all_sequential_ms": round(t_seq, 2),
-                "all_parallel_ms": round(t_par, 2),
-                "mps_compiled_ms": round(t_opt, 2),
-                "speedup_vs_sequential": round(t_seq / t_opt, 3),
-                "speedup_vs_all_parallel": round(t_par / t_opt, 3),
-            }
-        ],
+        "batch_sweep": batch_sweep,
     }
+    if compiled_graph:
+        output["compiled_graph"] = compiled_graph
 
     with open(args.output, "w") as f:
         json.dump(output, f, indent=2)
