@@ -297,8 +297,9 @@ def main():
                "os": platform.system()}
     if device == "cuda":
         hw_info["gpu"] = torch.cuda.get_device_name(0)
-        hw_info["gpu_memory_gb"] = round(
-            torch.cuda.get_device_properties(0).total_mem / 1e9, 1)
+        props = torch.cuda.get_device_properties(0)
+        mem = getattr(props, "total_memory", None) or getattr(props, "total_mem", 0)
+        hw_info["gpu_memory_gb"] = round(mem / 1e9, 1)
     elif device == "mps":
         hw_info["chip"] = "Apple Silicon"
 
