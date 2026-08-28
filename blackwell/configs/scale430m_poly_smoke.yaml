@@ -19,8 +19,8 @@ train:
   warmdown_frac: 0.3
 
 data:
-  tokenizer_dir: data/climbmix/bpe8192
-  shard_dir: data/climbmix/bpe8192/shards
+  tokenizer_dir: data/tinystories/bpe8192
+  shard_dir: data/tinystories/bpe8192/shards
   max_tokens: 10_000_000
 
 probes:
