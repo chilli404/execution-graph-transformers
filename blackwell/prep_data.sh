@@ -11,6 +11,12 @@ cd "$(dirname "$0")/.."
 
 DATASET="${1:-climbmix}"
 
+# Set HF_TOKEN if not already in environment
+# Either export it before running, or place it in ~/.huggingface/token
+if [ -z "${HF_TOKEN:-}" ] && [ -f ~/.huggingface/token ]; then
+    export HF_TOKEN=$(cat ~/.huggingface/token)
+fi
+
 echo "$(date): Preparing $DATASET data"
 
 uv run python -c "
