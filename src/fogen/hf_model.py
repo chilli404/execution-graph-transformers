@@ -43,6 +43,8 @@ class FogenConfig(PretrainedConfig):
 class FogenForCausalLM(PreTrainedModel, GenerationMixin):
     config_class = FogenConfig
     main_input_name = "input_ids"
+    _tied_weights_keys = {}
+    all_tied_weights_keys = {}
 
     def __init__(self, config):
         super().__init__(config)

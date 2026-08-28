@@ -14,8 +14,8 @@ dependencies = [
     "safetensors",
     "scipy",
     "tokenizers",
-    "torch",
-    "transformers",
+    "torch>=2.4",
+    "transformers>=4.45,<6",
 ]
 
 [project.optional-dependencies]
