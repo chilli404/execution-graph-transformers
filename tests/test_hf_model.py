@@ -30,7 +30,8 @@ def test_hf_save_and_reload_preserves_outputs(tmp_path):
     expected = model(inputs).logits
     model.save_pretrained(tmp_path)
 
-    loaded = FogenForCausalLM.from_pretrained(tmp_path).eval()
+    loaded = FogenForCausalLM.from_pretrained(
+        tmp_path, low_cpu_mem_usage=False).eval()
 
     assert torch.equal(loaded(inputs).logits, expected)
 
