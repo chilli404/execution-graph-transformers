@@ -7,6 +7,7 @@ import pytest
 from fogen.execution_graph import (
     additive_effect,
     compile_graph,
+    compile_graph_dp,
     compile_graph_greedy,
     fit_composition_scale,
     fit_count_adjusted_scale,
@@ -116,3 +117,51 @@ def test_fit_count_adjusted_scale():
     alpha0, beta = fit_count_adjusted_scale(sums, actual, n_par)
     assert alpha0 == pytest.approx(1.2, abs=0.1)
     assert beta == pytest.approx(0.25, abs=0.1)
+
+
+def test_compile_graph_dp_matches_brute_force_nonuniform():
+    """DP solver matches brute-force exactly on non-uniform savings."""
+    np.random.seed(7)
+    costs = np.random.exponential(0.5, size=10)
+    savings = np.random.uniform(0.5, 2.0, size=10)
+    for budget in [1.0, 2.0, 3.0]:
+        bf = compile_graph(costs, savings, budget, scale=0.8)
+        dp = compile_graph_dp(costs, savings, budget, scale=0.8, resolution=10000)
+        assert dp["predicted_saving"] == pytest.approx(
+            bf["predicted_saving"], abs=0.01
+        ), f"Budget={budget}: BF={bf['predicted_saving']:.4f} vs DP={dp['predicted_saving']:.4f}"
+
+
+def test_compile_graph_dp_scales_to_large_layers():
+    """DP handles L=64 in reasonable time."""
+    np.random.seed(0)
+    costs = np.random.exponential(0.3, size=64)
+    savings = np.random.uniform(0.1, 1.0, size=64)
+    result = compile_graph_dp(costs, savings, budget=5.0, scale=0.7)
+    assert sum(result["bits"]) > 0
+    assert result["predicted_effect"] <= 5.0 + 0.01
+
+
+def test_compile_graph_dp_on_real_data():
+    """DP matches brute-force on actual ClimbMix data with non-uniform savings."""
+    data_path = Path(__file__).parent.parent / "results" / "data" / "climbmix_graphs.json"
+    if not data_path.exists():
+        pytest.skip("ClimbMix graph data not available")
+    with open(data_path) as f:
+        data = json.load(f)
+    rows = data["rows"]
+    effects = single_layer_effects(rows, "symmetric_kl")
+    scale = fit_composition_scale(
+        [sum(effects[i] * b for i, b in enumerate(r["bits"]))
+         for r in rows if sum(r["bits"]) >= 2],
+        [r["symmetric_kl"] - rows[0]["symmetric_kl"]
+         for r in rows if sum(r["bits"]) >= 2],
+    )
+    # Non-uniform savings (simulate hardware-measured values)
+    savings = np.array([0.8, 1.5, 0.3, 0.1, 0.9, 0.2, 1.1, 0.4, 0.7, 0.05, 0.6, 1.2])
+    for budget in [2.0, 4.0, 6.0]:
+        bf = compile_graph(effects, savings, budget, scale)
+        dp = compile_graph_dp(effects, savings, budget, scale, resolution=10000)
+        assert dp["predicted_saving"] == pytest.approx(
+            bf["predicted_saving"], abs=0.01
+        )

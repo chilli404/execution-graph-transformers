@@ -242,6 +242,9 @@ def main():
                         help="Override layer count")
     parser.add_argument("--warmup", type=int, default=20)
     parser.add_argument("--repeats", type=int, default=100)
+    parser.add_argument("--verify-greedy", action="store_true",
+                        help="Run brute-force compiler alongside greedy and verify match. "
+                             "Feasible up to ~20 layers (takes ~1.5s at L=20).")
     args = parser.parse_args()
 
     if args.device:
@@ -357,7 +360,8 @@ def main():
         import sys
         sys.path.insert(0, "src")
         from fogen.execution_graph import (
-            compile_graph_greedy, fit_composition_scale, single_layer_effects,
+            compile_graph_dp, compile_graph_greedy,
+            fit_composition_scale, single_layer_effects,
         )
 
         rows = graph_data["rows"]
@@ -379,7 +383,8 @@ def main():
         fused_savings = np.array([row["fused_saving_ms"] for row in layer_rows])
         best_savings = np.maximum(par_savings, fused_savings)
 
-        result = compile_graph_greedy(effects, best_savings, 999.0, alpha)
+        # DP is exact for non-uniform savings; greedy is a fast approximation
+        result = compile_graph_dp(effects, best_savings, 999.0, alpha)
         optimal_mask = result["bits"]
         optimal_modes = ["parallel" if b else "sequential" for b in optimal_mask]
 
@@ -456,6 +461,88 @@ def main():
         print(f"  Measured: seq={t_seq_c:.2f}ms, compiled={t_compiled:.2f}ms "
               f"({t_seq_c / t_compiled:.3f}x)")
 
+    # --- Verify greedy vs brute-force ---
+    greedy_verification = None
+    if getattr(args, "verify_greedy", False) and compiled_graph and n_layer <= 24:
+        import sys
+        if "src" not in sys.path:
+            sys.path.insert(0, "src")
+        from fogen.execution_graph import compile_graph, compile_graph_greedy
+
+        par_savings = np.array([row["par_saving_ms"] for row in layer_rows])
+        fused_savings = np.array([row["fused_saving_ms"] for row in layer_rows])
+        best_savings = np.maximum(par_savings, fused_savings)
+
+        if len(graph_data["layer_defects"]) == n_layer:
+            # Has defect data — compare with quality-budgeted compilation
+            effects = single_layer_effects(rows, "symmetric_kl")
+            budgets = [1.0, 2.0, 3.0, 5.0, 999.0]
+            print(f"\n--- Greedy vs brute-force verification (L={n_layer}) ---")
+            import time as _time
+            t_bf_total, t_gr_total = 0, 0
+            matches = 0
+            for budget in budgets:
+                t0 = _time.perf_counter()
+                bf = compile_graph(effects, best_savings, budget, alpha)
+                t_bf = _time.perf_counter() - t0
+
+                t0 = _time.perf_counter()
+                gr = compile_graph_greedy(effects, best_savings, budget, alpha)
+                t_gr = _time.perf_counter() - t0
+
+                t_bf_total += t_bf
+                t_gr_total += t_gr
+                match = bf["predicted_saving"] == gr["predicted_saving"]
+                if match:
+                    matches += 1
+                status = "MATCH" if match else "MISMATCH"
+                print(f"  Budget={budget:.1f}: BF={bf['predicted_saving']:.3f}ms "
+                      f"({sum(bf['bits'])} layers, {t_bf:.3f}s) | "
+                      f"Greedy={gr['predicted_saving']:.3f}ms "
+                      f"({sum(gr['bits'])} layers, {t_gr*1000:.3f}ms) | {status}")
+
+            greedy_verification = {
+                "n_layers": n_layer,
+                "budgets_tested": budgets,
+                "all_match": matches == len(budgets),
+                "matches": matches,
+                "total": len(budgets),
+                "brute_force_time_s": round(t_bf_total, 3),
+                "greedy_time_s": round(t_gr_total, 6),
+                "speedup": round(t_bf_total / max(t_gr_total, 1e-9), 0),
+            }
+            print(f"  Result: {matches}/{len(budgets)} match | "
+                  f"BF: {t_bf_total:.3f}s, Greedy: {t_gr_total*1000:.3f}ms "
+                  f"({t_bf_total/max(t_gr_total, 1e-9):.0f}x faster)")
+        else:
+            # Timing-only: uniform savings, greedy is provably optimal
+            # Still verify to be safe
+            uniform_savings = np.ones(n_layer)
+            # Use synthetic costs for verification
+            costs = best_savings.copy()
+            costs[costs <= 0] = 0.001
+            print(f"\n--- Greedy vs brute-force verification (L={n_layer}, timing-only) ---")
+            import time as _time
+            t0 = _time.perf_counter()
+            bf = compile_graph(costs, uniform_savings, 999.0, 1.0)
+            t_bf = _time.perf_counter() - t0
+            t0 = _time.perf_counter()
+            gr = compile_graph_greedy(costs, uniform_savings, 999.0, 1.0)
+            t_gr = _time.perf_counter() - t0
+            match = bf["bits"] == gr["bits"]
+            print(f"  BF: {sum(bf['bits'])} layers in {t_bf:.3f}s | "
+                  f"Greedy: {sum(gr['bits'])} layers in {t_gr*1000:.3f}ms | "
+                  f"{'MATCH' if match else 'MISMATCH'}")
+            print(f"  Speedup: {t_bf/max(t_gr, 1e-9):.0f}x")
+            greedy_verification = {
+                "n_layers": n_layer,
+                "method": "timing_only_uniform",
+                "match": match,
+                "brute_force_time_s": round(t_bf, 3),
+                "greedy_time_s": round(t_gr, 6),
+                "speedup": round(t_bf / max(t_gr, 1e-9), 0),
+            }
+
     # --- Output ---
     hw_info = {"backend": device, "pytorch_version": torch.__version__,
                "platform": platform.system()}
@@ -480,6 +567,8 @@ def main():
     }
     if compiled_graph:
         output["compiled_graph"] = compiled_graph
+    if greedy_verification:
+        output["greedy_verification"] = greedy_verification
 
     with open(args.output, "w") as f:
         json.dump(output, f, indent=2)
