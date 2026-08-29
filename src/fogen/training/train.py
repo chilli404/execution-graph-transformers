@@ -64,7 +64,10 @@ def consistency_weight(step, total, config):
 
 
 def polymorphic_loss(model, inputs, targets, parallel_weight, consistency_weight,
-                     teacher_detach=False):
+                     teacher_detach=False, memory_efficient=False):
+    if memory_efficient:
+        return _polymorphic_loss_memory_efficient(
+            model, inputs, targets, parallel_weight, consistency_weight)
     sequential_logits = model(inputs, mode="sequential")
     parallel_logits = model(inputs, mode="parallel")
     sequential_loss = F.cross_entropy(
@@ -84,6 +87,49 @@ def polymorphic_loss(model, inputs, targets, parallel_weight, consistency_weight
         "sequential_loss": sequential_loss,
         "parallel_loss": parallel_loss,
         "consistency": consistency,
+    }
+
+
+def _polymorphic_loss_memory_efficient(model, inputs, targets, parallel_weight,
+                                       consistency_weight):
+    """Backward each graph separately so only one set of activations is held at a time.
+
+    Uses teacher_detach semantics for the consistency term (sequential logits
+    are detached before computing MSE). This is mathematically slightly different
+    from the joint version but was already validated as stable in the original paper.
+    Halves peak activation memory, enabling larger models on limited VRAM.
+    """
+    # Forward + backward sequential path
+    sequential_logits = model(inputs, mode="sequential")
+    sequential_loss = F.cross_entropy(
+        sequential_logits.view(-1, sequential_logits.size(-1)), targets.reshape(-1))
+    ((1 - parallel_weight) * sequential_loss).backward()
+    sequential_centered = (
+        sequential_logits - sequential_logits.mean(dim=-1, keepdim=True)
+    ).detach()
+    sequential_loss_val = sequential_loss.detach()
+    del sequential_logits
+
+    # Forward + backward parallel path (with consistency against detached sequential)
+    parallel_logits = model(inputs, mode="parallel")
+    parallel_loss = F.cross_entropy(
+        parallel_logits.view(-1, parallel_logits.size(-1)), targets.reshape(-1))
+    parallel_centered = parallel_logits - parallel_logits.mean(dim=-1, keepdim=True)
+    consistency = F.mse_loss(parallel_centered, sequential_centered)
+    (parallel_weight * parallel_loss + consistency_weight * consistency).backward()
+    parallel_loss_val = parallel_loss.detach()
+    consistency_val = consistency.detach()
+    del parallel_logits, parallel_centered
+
+    total = (
+        (1 - parallel_weight) * sequential_loss_val
+        + parallel_weight * parallel_loss_val
+        + consistency_weight * consistency_val
+    )
+    return total, {
+        "sequential_loss": sequential_loss_val,
+        "parallel_loss": parallel_loss_val,
+        "consistency": consistency_val,
     }
 
 
@@ -264,17 +310,21 @@ def main():
             elif execution_cfg.get("enabled", False):
                 current_consistency_weight = consistency_weight(
                     step, total, execution_cfg)
+                mem_efficient = execution_cfg.get("memory_efficient", False)
                 loss, execution_metrics = polymorphic_loss(
                     model, x, y,
                     execution_cfg.get("parallel_weight", 0.5),
                     current_consistency_weight,
-                    execution_cfg.get("teacher_detach", False))
+                    execution_cfg.get("teacher_detach", False),
+                    memory_efficient=mem_efficient)
                 execution_metrics["consistency_weight"] = torch.tensor(
                     current_consistency_weight, device=loss.device)
             else:
                 loss = model.loss(x, y)
                 execution_metrics = None
-        loss.backward()
+        if not (execution_cfg.get("enabled", False)
+                and execution_cfg.get("memory_efficient", False)):
+            loss.backward()
         guard_record = None
         if guard_items and step % guard_cfg.get("every", 1) == 0:
             with torch.autocast(device_type=device.split(":")[0], dtype=torch.bfloat16,
