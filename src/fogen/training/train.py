@@ -133,12 +133,16 @@ def _polymorphic_loss_memory_efficient(model, inputs, targets, parallel_weight,
     }
 
 
-def save_checkpoint(model, out_dir: Path, step: int):
+def save_checkpoint(model, out_dir: Path, step: int,
+                    muon=None, adamw=None):
     from safetensors.torch import save_file
     out_dir.mkdir(parents=True, exist_ok=True)
     state = {k: v.bfloat16() for k, v in model.state_dict().items()
              if not k.startswith("rope_")}
     save_file(state, str(out_dir / f"step{step:06d}.safetensors"))
+    if muon is not None and adamw is not None:
+        torch.save({"muon": muon.state_dict(), "adamw": adamw.state_dict(),
+                     "step": step}, str(out_dir / f"opt{step:06d}.pt"))
 
 
 def checkpoint_steps(cfg: dict, total: int) -> set[int]:
@@ -175,6 +179,7 @@ def main():
     model = GPT(mcfg).to(device=device, dtype=param_dtype)
 
     resume_step = 0
+    resume_opt_path = None
     init_ckpt = args.init_ckpt
     if args.resume:
         ckpt_dir = out / "ckpts"
@@ -183,7 +188,11 @@ def main():
             if ckpts:
                 init_ckpt = str(ckpts[-1])
                 resume_step = int(ckpts[-1].stem.replace("step", ""))
-                print(f"Resuming from {init_ckpt} (step {resume_step})")
+                opt_path = ckpt_dir / f"opt{resume_step:06d}.pt"
+                if opt_path.exists():
+                    resume_opt_path = str(opt_path)
+                print(f"Resuming from {init_ckpt} (step {resume_step})"
+                      f"{' + optimizer' if resume_opt_path else ' (no optimizer state)'}")
     if init_ckpt:
         from safetensors.torch import load_file
         state = {key: value.to(param_dtype) for key, value in load_file(init_ckpt).items()}
@@ -243,6 +252,11 @@ def main():
     adamw = torch.optim.AdamW(adamw_groups, betas=(0.9, 0.95), weight_decay=0.0)
     for g in adamw.param_groups:
         g["base_lr"] = g["lr"]
+    if resume_opt_path:
+        opt_state = torch.load(resume_opt_path, map_location=device, weights_only=False)
+        muon.load_state_dict(opt_state["muon"])
+        adamw.load_state_dict(opt_state["adamw"])
+        print(f"Loaded optimizer state from step {opt_state['step']}")
     total = t["steps"]
     ckpt_at = checkpoint_steps(cfg.get("checkpointing", {}), total)
 
@@ -304,7 +318,7 @@ def main():
             g["lr"] = g["base_lr"] * s
 
         if step in ckpt_at:
-            save_checkpoint(model, out / "ckpts", step)
+            save_checkpoint(model, out / "ckpts", step, muon, adamw)
         pe = cfg["probes"]["every"]
         if step <= cfg["probes"].get("dense_until", 50) or step % pe == 0:
             run_probes(step)
