@@ -14,7 +14,7 @@ batch_seqs: 8
 train:
   steps: 12000
   matrix_lr: 0.0003
-  embed_lr: 0.001
+  embed_lr: 0.002
   weight_decay: 0.0
   warmdown_frac: 0.3
   bf16_params: true
