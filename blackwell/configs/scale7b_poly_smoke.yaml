@@ -17,6 +17,7 @@ train:
   embed_lr: 0.005
   weight_decay: 0.0
   warmdown_frac: 0.3
+  bf16_params: true
 
 data:
   tokenizer_dir: data/climbmix/bpe8192

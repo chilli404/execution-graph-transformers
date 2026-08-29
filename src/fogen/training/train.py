@@ -169,7 +169,8 @@ def main():
     (out / "config_used.yaml").write_text(yaml.dump({**cfg, "seed": args.seed}))
 
     mcfg = ModelConfig(**cfg["model"])
-    model = GPT(mcfg).to(device)
+    param_dtype = torch.bfloat16 if cfg.get("train", {}).get("bf16_params", False) else torch.float32
+    model = GPT(mcfg).to(device=device, dtype=param_dtype)
     if args.init_ckpt:
         from safetensors.torch import load_file
         state = {key: value.float() for key, value in load_file(args.init_ckpt).items()}
