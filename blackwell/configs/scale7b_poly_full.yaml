@@ -6,13 +6,13 @@ model:
   n_layer: 32
   d_model: 4096
   n_head: 32
-  ctx_len: 512
+  ctx_len: 1024
   execution_mode: sequential
 
 batch_seqs: 2
 
 train:
-  steps: 3000
+  steps: 12000
   matrix_lr: 0.001
   embed_lr: 0.005
   weight_decay: 0.0
@@ -25,7 +25,7 @@ data:
 
 probes:
   battery_path: data/probes/v1/battery.jsonl
-  every: 250
+  every: 500
   dense_until: 20
   batch_size: 16
 
@@ -35,5 +35,5 @@ execution_training:
   consistency_weight: 1.0
 
 checkpointing:
-  ckpt_every: 1000
-  dense_windows: [[0, 100, 10]]
+  ckpt_every: 2000
+  dense_windows: [[0, 200, 20]]
