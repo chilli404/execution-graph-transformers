@@ -231,7 +231,8 @@ class GPT(nn.Module):
             x = sequential
         return torch.stack(defects)
 
-    def forward(self, idx: torch.Tensor, mode: str | None = None) -> torch.Tensor:
+    def forward(self, idx: torch.Tensor, mode: str | None = None,
+                gradient_checkpointing: bool = False) -> torch.Tensor:
         T = idx.size(1)
         cos, sin = self.rope_cos[:, :, :T], self.rope_sin[:, :, :T]
         x = _rmsnorm(self.wte(idx))
@@ -244,7 +245,11 @@ class GPT(nn.Module):
                 raise ValueError("Execution mask length must equal n_layer")
         for i, b in enumerate(self.blocks):
             ve = self.value_embeds[str(i)](idx) if str(i) in self.value_embeds else None
-            x = b(x, ve, cos, sin, mode=layer_modes[i])
+            if gradient_checkpointing and self.training:
+                x = torch.utils.checkpoint.checkpoint(
+                    b, x, ve, cos, sin, layer_modes[i], use_reentrant=False)
+            else:
+                x = b(x, ve, cos, sin, mode=layer_modes[i])
         logits = self.lm_head(_rmsnorm(x)).float()
         return 15.0 * torch.tanh(logits / 15.0)  # nanochat logit softcap
 
