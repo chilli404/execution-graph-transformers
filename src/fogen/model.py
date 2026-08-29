@@ -117,7 +117,10 @@ class Block(nn.Module):
                     self.attn.wv.weight,
                     self.mlp.up.weight,
                 ]).detach()
-            projected = F.linear(normalized, self._fused_input_weight)
+            with torch.autocast(device_type=normalized.device.type, enabled=False):
+                projected = F.linear(
+                    normalized.float(), self._fused_input_weight.float()
+                ).to(normalized.dtype)
             size = normalized.size(-1)
             q, k, v, mlp_hidden = projected.split([size, size, size, 4 * size], dim=-1)
             attention = self.attn.forward_projected(q, k, v, ve, cos, sin)
@@ -157,7 +160,10 @@ class Block(nn.Module):
                     self.attn.wv.weight,
                     self.mlp.up.weight,
                 ]).detach()
-            projected = F.linear(normalized, self._fused_input_weight)
+            with torch.autocast(device_type=normalized.device.type, enabled=False):
+                projected = F.linear(
+                    normalized.float(), self._fused_input_weight.float()
+                ).to(normalized.dtype)
             size = normalized.size(-1)
             q, k, v, mlp_hidden = projected.split([size, size, size, 4 * size], dim=-1)
             attention, cache = self.attn.forward_projected_cached(
