@@ -156,6 +156,8 @@ def main():
     ap.add_argument("--seed", type=int, required=True)
     ap.add_argument("--out", default=None)
     ap.add_argument("--init-ckpt")
+    ap.add_argument("--resume", action="store_true",
+                    help="Resume from latest checkpoint in output dir")
     ap.add_argument("--no-wandb", action="store_true")
     ap.add_argument("--mlflow", action="store_true",
                     help="Use MLflow for experiment tracking")
@@ -171,9 +173,20 @@ def main():
     mcfg = ModelConfig(**cfg["model"])
     param_dtype = torch.bfloat16 if cfg.get("train", {}).get("bf16_params", False) else torch.float32
     model = GPT(mcfg).to(device=device, dtype=param_dtype)
-    if args.init_ckpt:
+
+    resume_step = 0
+    init_ckpt = args.init_ckpt
+    if args.resume:
+        ckpt_dir = out / "ckpts"
+        if ckpt_dir.exists():
+            ckpts = sorted(ckpt_dir.glob("step*.safetensors"))
+            if ckpts:
+                init_ckpt = str(ckpts[-1])
+                resume_step = int(ckpts[-1].stem.replace("step", ""))
+                print(f"Resuming from {init_ckpt} (step {resume_step})")
+    if init_ckpt:
         from safetensors.torch import load_file
-        state = {key: value.float() for key, value in load_file(args.init_ckpt).items()}
+        state = {key: value.to(param_dtype) for key, value in load_file(init_ckpt).items()}
         missing, unexpected = model.load_state_dict(state, strict=False)
         assert not unexpected
         assert all(key.startswith("rope_") for key in missing)
@@ -276,8 +289,13 @@ def main():
         model.train()
 
     model.train()
+    if resume_step > 0:
+        print(f"Fast-forwarding data loader to step {resume_step}...")
+        for skip in range(resume_step):
+            active_loader(skip, loader, loader_b, switch_step).next_batch()
+        print(f"Resumed. Starting from step {resume_step}.")
     t0 = time.time()
-    for step in range(total + 1):
+    for step in range(resume_step, total + 1):
         s = lr_scale(step, total, t.get("warmdown_frac", 0.3))
         wd = t["weight_decay"] * (1 - step / total)  # decay wd to 0
         for g in muon.param_groups:
