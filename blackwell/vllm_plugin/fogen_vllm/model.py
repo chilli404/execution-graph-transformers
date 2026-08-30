@@ -115,7 +115,9 @@ class FogenAttention(nn.Module):
         if self.has_ve and ve is not None:
             v = self.ve_lambda_0 * v + self.ve_lambda_1 * ve
 
-        # QK-norm before RoPE
+        # RoPE first, then QK-norm (matches reference model)
+        q, k = self.rotary_emb(positions, q, k)
+
         q = F.rms_norm(
             q.view(-1, self.n_head, self.head_dim),
             (self.head_dim,),
@@ -124,8 +126,6 @@ class FogenAttention(nn.Module):
             k.view(-1, self.n_head, self.head_dim),
             (self.head_dim,),
         ).reshape(-1, self.d_model)
-
-        q, k = self.rotary_emb(positions, q, k)
 
         attn_output = self.attn(q, k, v, kv_cache, attn_metadata)
         output, _ = self.o_proj(attn_output)
