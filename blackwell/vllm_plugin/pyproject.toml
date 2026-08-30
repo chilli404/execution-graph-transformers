@@ -1,0 +1,19 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "fogen-vllm"
+version = "0.1.0"
+description = "vLLM out-of-tree model plugin for execution-graph Transformers"
+requires-python = ">=3.11"
+dependencies = [
+    "vllm>=0.27",
+    "torch",
+]
+
+[project.entry-points."vllm.general_plugins"]
+fogen = "fogen_vllm:register"
+
+[tool.hatch.build.targets.wheel]
+packages = ["fogen_vllm"]
