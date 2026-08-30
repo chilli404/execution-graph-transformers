@@ -63,6 +63,7 @@ class FogenAttention(nn.Module):
         n_head: int,
         layer_idx: int,
         n_layer: int,
+        max_position: int = 2048,
         cache_config: Optional[CacheConfig] = None,
         prefix: str = "",
     ):
@@ -87,7 +88,7 @@ class FogenAttention(nn.Module):
         self.rotary_emb = get_rope(
             head_size=self.head_dim,
             rotary_dim=self.head_dim,
-            max_position=8192,
+            max_position=max_position,
             base=10000,
             is_neox_style=True,
         )
@@ -139,6 +140,7 @@ class FogenBlock(nn.Module):
         n_head: int,
         layer_idx: int,
         n_layer: int,
+        max_position: int = 2048,
         cache_config: Optional[CacheConfig] = None,
         prefix: str = "",
     ):
@@ -146,6 +148,7 @@ class FogenBlock(nn.Module):
         self.norm = FogenRMSNorm(d_model)
         self.attn = FogenAttention(
             d_model, n_head, layer_idx, n_layer,
+            max_position=max_position,
             cache_config=cache_config,
             prefix=f"{prefix}.attn",
         )
@@ -206,6 +209,7 @@ class FogenForCausalLM(nn.Module):
                 config.n_head,
                 i,
                 config.n_layer,
+                max_position=config.ctx_len,
                 cache_config=cache_config,
                 prefix=f"{prefix}.blocks.{i}",
             )
@@ -253,9 +257,10 @@ class FogenForCausalLM(nn.Module):
         hidden_states: torch.Tensor,
         sampling_metadata: SamplingMetadata,
     ) -> torch.Tensor:
+        # LogitsProcessor applies lm_head and gathers for the sampling
+        # positions — it does not modify logit values
         logits = self.logits_processor(self.lm_head, hidden_states,
                                        sampling_metadata)
-        # Logit softcap
         if logits is not None:
             logits = 15.0 * torch.tanh(logits / 15.0)
         return logits
