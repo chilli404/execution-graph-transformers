@@ -74,50 +74,26 @@ def run_benchmark(hf_dir, port, num_prompts, input_len, output_len):
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
     output = result.stdout + result.stderr
 
-    # Parse key metrics from benchmark output
-    metrics = {"raw_output": output}
+    # Dump raw output for debugging, then parse
+    metrics = {}
+    print(f"    --- raw benchmark output ---")
     for line in output.split("\n"):
         line = line.strip()
-        if "Request throughput" in line:
+        if not line:
+            continue
+        # Print lines that look like metrics
+        if any(kw in line.lower() for kw in ["throughput", "ttft", "tpot", "latency", "request"]):
+            print(f"    {line}")
+        # Try to parse "key: value unit" patterns
+        if ":" in line:
             try:
-                metrics["request_throughput"] = float(line.split(":")[1].strip().split()[0])
-            except (IndexError, ValueError):
+                key, rest = line.split(":", 1)
+                val = float(rest.strip().split()[0])
+                clean_key = key.strip().lower().replace(" ", "_")
+                metrics[clean_key] = val
+            except (ValueError, IndexError):
                 pass
-        elif "Output token throughput" in line:
-            try:
-                metrics["output_token_throughput"] = float(line.split(":")[1].strip().split()[0])
-            except (IndexError, ValueError):
-                pass
-        elif "Mean TTFT" in line:
-            try:
-                metrics["mean_ttft_ms"] = float(line.split(":")[1].strip().split()[0])
-            except (IndexError, ValueError):
-                pass
-        elif "Median TTFT" in line:
-            try:
-                metrics["median_ttft_ms"] = float(line.split(":")[1].strip().split()[0])
-            except (IndexError, ValueError):
-                pass
-        elif "P99 TTFT" in line:
-            try:
-                metrics["p99_ttft_ms"] = float(line.split(":")[1].strip().split()[0])
-            except (IndexError, ValueError):
-                pass
-        elif "Mean TPOT" in line:
-            try:
-                metrics["mean_tpot_ms"] = float(line.split(":")[1].strip().split()[0])
-            except (IndexError, ValueError):
-                pass
-        elif "Median TPOT" in line:
-            try:
-                metrics["median_tpot_ms"] = float(line.split(":")[1].strip().split()[0])
-            except (IndexError, ValueError):
-                pass
-        elif "P99 TPOT" in line:
-            try:
-                metrics["p99_tpot_ms"] = float(line.split(":")[1].strip().split()[0])
-            except (IndexError, ValueError):
-                pass
+    print(f"    --- end ---")
     return metrics
 
 
@@ -175,11 +151,7 @@ def main():
                     }
                     results.append(entry)
 
-                    throughput = metrics.get("output_token_throughput", "N/A")
-                    ttft = metrics.get("mean_ttft_ms", "N/A")
-                    tpot = metrics.get("mean_tpot_ms", "N/A")
-                    print(f"    Throughput: {throughput} tok/s, "
-                          f"TTFT: {ttft}ms, TPOT: {tpot}ms")
+                    print(f"    Parsed {len(metrics)} metrics")
                 except Exception as e:
                     print(f"    ERROR: {e}")
                     results.append({
