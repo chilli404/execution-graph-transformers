@@ -59,8 +59,9 @@ def launch_server(hf_dir, mode, port=8000, dtype="bfloat16"):
 
 def run_benchmark(hf_dir, port, num_prompts, input_len, output_len):
     """Run vllm bench serve and parse the output."""
+    vllm_bin = os.path.join(os.path.dirname(sys.executable), "vllm")
     cmd = [
-        sys.executable, "-m", "vllm", "bench", "serve",
+        vllm_bin, "bench", "serve",
         "--backend", "vllm",
         "--model", hf_dir,
         "--port", str(port),
