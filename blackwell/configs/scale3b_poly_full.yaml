@@ -9,10 +9,10 @@ model:
   ctx_len: 1024
   execution_mode: sequential
 
-batch_seqs: 32
+batch_seqs: 16
 
 train:
-  steps: 3000
+  steps: 6000
   matrix_lr: 0.0005
   embed_lr: 0.002
   weight_decay: 0.0
