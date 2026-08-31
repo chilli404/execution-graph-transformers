@@ -45,7 +45,7 @@ def launch_server(hf_dir, mode, port=8000, dtype="bfloat16"):
         "--trust-remote-code",
         "--dtype", dtype,
         "--port", str(port),
-        "--disable-log-requests",
+        "--no-enable-log-requests",
     ]
     if mode != "default":
         cmd += ["--hf-overrides", json.dumps({"execution_mode": mode})]
