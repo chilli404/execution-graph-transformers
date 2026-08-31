@@ -125,6 +125,12 @@ class FogenAttention(nn.Module):
         ).reshape(-1, qk_dim)
 
         attn_output = self.attn(q, k, v)
+        # Attention may return full d_model after internal all-gather;
+        # RowParallelLinear expects sharded input (d_model // tp)
+        import os
+        if os.environ.get("FOGEN_DEBUG"):
+            print(f"[DEBUG] q={q.shape} attn_out={attn_output.shape} "
+                  f"o_proj_weight={self.o_proj.weight.shape}", flush=True)
         output, _ = self.o_proj(attn_output)
         return output
 
