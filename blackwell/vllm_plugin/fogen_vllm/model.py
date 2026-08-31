@@ -108,6 +108,14 @@ class FogenAttention(nn.Module):
         positions: torch.Tensor,
     ) -> torch.Tensor:
         if self.has_ve and ve is not None:
+            # VE embedding is full d_model; v is sharded by TP.
+            # Shard ve to match v's size.
+            if ve.shape[-1] != v.shape[-1]:
+                tp_size = ve.shape[-1] // v.shape[-1]
+                from vllm.distributed import get_tensor_model_parallel_rank
+                rank = get_tensor_model_parallel_rank()
+                shard_size = v.shape[-1]
+                ve = ve[..., rank * shard_size:(rank + 1) * shard_size]
             v = self.ve_lambda_0 * v + self.ve_lambda_1 * ve
 
         # RoPE first, then QK-norm (matches reference model)
