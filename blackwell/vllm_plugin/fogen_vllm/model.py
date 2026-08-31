@@ -135,9 +135,9 @@ class FogenAttention(nn.Module):
         positions: torch.Tensor,
     ) -> torch.Tensor:
         qkv, _ = self.qkv_proj(x)
-        # Split into equal thirds — works regardless of TP sharding
         q, k, v = qkv.chunk(3, dim=-1)
-        return self.forward_projected(q, k, v, ve, positions)
+        return self.forward_projected(
+            q.contiguous(), k.contiguous(), v.contiguous(), ve, positions)
 
 
 class FogenBlock(nn.Module):
@@ -186,7 +186,7 @@ class FogenBlock(nn.Module):
             qkv_size = projected.shape[-1] * 3 // 7  # 3d out of 3d+4d = 7d
             mlp_size = projected.shape[-1] - qkv_size
             qkv_part, mlp_hidden = projected.split([qkv_size, mlp_size], dim=-1)
-            q, k, v = qkv_part.chunk(3, dim=-1)
+            q, k, v = [t.contiguous() for t in qkv_part.chunk(3, dim=-1)]
             attention = self.attn.forward_projected(q, k, v, ve, positions)
             mlp = self.mlp.down(F.relu(mlp_hidden).square())[0]
             return x + attention + mlp
