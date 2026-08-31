@@ -60,40 +60,91 @@ def launch_server(hf_dir, mode, port=8000, dtype="bfloat16"):
 
 
 def run_benchmark(hf_dir, port, num_prompts, input_len, output_len):
-    """Run vLLM's benchmark_serving and parse output."""
-    cmd = [
-        sys.executable, "-m", "vllm.entrypoints.openai.benchmark_serving",
-        "--backend", "vllm",
-        "--model", hf_dir,
-        "--port", str(port),
-        "--num-prompts", str(num_prompts),
-        "--request-rate", "inf",
-        "--random-input-len", str(input_len),
-        "--random-output-len", str(output_len),
-    ]
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-    output = result.stdout + result.stderr
+    """Send requests to vLLM server and measure latency/throughput."""
+    import urllib.request
+    import random
+    import statistics
 
-    # Dump raw output for debugging, then parse
-    metrics = {}
-    print(f"    --- raw benchmark output ---")
-    for line in output.split("\n"):
-        line = line.strip()
-        if not line:
+    random.seed(42)
+    model_name = hf_dir.rstrip("/").split("/")[-1]
+
+    ttfts = []
+    tpots = []
+    total_output_tokens = 0
+    total_start = time.time()
+
+    for i in range(num_prompts):
+        # Random token IDs as prompt
+        prompt_tokens = [random.randint(1, 8191) for _ in range(input_len)]
+
+        payload = json.dumps({
+            "model": model_name,
+            "prompt": prompt_tokens,
+            "max_tokens": output_len,
+            "temperature": 0,
+            "stream": True,
+        }).encode()
+
+        req = urllib.request.Request(
+            f"http://localhost:{port}/v1/completions",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+        )
+
+        first_token_time = None
+        last_token_time = None
+        n_tokens = 0
+        request_start = time.time()
+
+        try:
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                for line in resp:
+                    line = line.decode().strip()
+                    if not line.startswith("data:"):
+                        continue
+                    data = line[5:].strip()
+                    if data == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(data)
+                        if chunk.get("choices", [{}])[0].get("text", ""):
+                            now = time.time()
+                            if first_token_time is None:
+                                first_token_time = now
+                            last_token_time = now
+                            n_tokens += 1
+                    except json.JSONDecodeError:
+                        pass
+        except Exception as e:
+            print(f"    Request {i} failed: {e}")
             continue
-        # Print lines that look like metrics
-        if any(kw in line.lower() for kw in ["throughput", "ttft", "tpot", "latency", "request"]):
-            print(f"    {line}")
-        # Try to parse "key: value unit" patterns
-        if ":" in line:
-            try:
-                key, rest = line.split(":", 1)
-                val = float(rest.strip().split()[0])
-                clean_key = key.strip().lower().replace(" ", "_")
-                metrics[clean_key] = val
-            except (ValueError, IndexError):
-                pass
-    print(f"    --- end ---")
+
+        if first_token_time is not None:
+            ttfts.append((first_token_time - request_start) * 1000)
+        if n_tokens > 1 and last_token_time and first_token_time:
+            tpots.append((last_token_time - first_token_time) / (n_tokens - 1) * 1000)
+        total_output_tokens += n_tokens
+
+    total_time = time.time() - total_start
+
+    metrics = {}
+    if ttfts:
+        ttfts.sort()
+        metrics["mean_ttft_ms"] = statistics.mean(ttfts)
+        metrics["median_ttft_ms"] = statistics.median(ttfts)
+        metrics["p95_ttft_ms"] = ttfts[int(len(ttfts) * 0.95)]
+        metrics["p99_ttft_ms"] = ttfts[int(len(ttfts) * 0.99)]
+    if tpots:
+        tpots.sort()
+        metrics["mean_tpot_ms"] = statistics.mean(tpots)
+        metrics["median_tpot_ms"] = statistics.median(tpots)
+        metrics["p95_tpot_ms"] = tpots[int(len(tpots) * 0.95)]
+        metrics["p99_tpot_ms"] = tpots[int(len(tpots) * 0.99)]
+    metrics["total_time_s"] = total_time
+    metrics["output_tokens"] = total_output_tokens
+    metrics["output_token_throughput"] = total_output_tokens / total_time if total_time > 0 else 0
+    metrics["request_throughput"] = num_prompts / total_time if total_time > 0 else 0
+
     return metrics
 
 
@@ -151,7 +202,11 @@ def main():
                     }
                     results.append(entry)
 
-                    print(f"    Parsed {len(metrics)} metrics")
+                    throughput = metrics.get("output_token_throughput", 0)
+                    ttft = metrics.get("mean_ttft_ms", 0)
+                    tpot = metrics.get("mean_tpot_ms", 0)
+                    print(f"    Throughput: {throughput:.0f} tok/s, "
+                          f"TTFT: {ttft:.1f}ms, TPOT: {tpot:.2f}ms")
                 except Exception as e:
                     print(f"    ERROR: {e}")
                     results.append({
