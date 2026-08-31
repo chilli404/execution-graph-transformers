@@ -112,14 +112,17 @@ class FogenAttention(nn.Module):
         # RoPE first, then QK-norm (matches reference model)
         q, k = self.rotary_emb(positions, q, k)
 
+        # Reshape using actual tensor size (TP-safe)
+        qk_dim = q.shape[-1]
+        n_heads_local = qk_dim // self.head_dim
         q = F.rms_norm(
-            q.view(-1, self.n_head, self.head_dim),
+            q.view(-1, n_heads_local, self.head_dim),
             (self.head_dim,),
-        ).reshape(-1, self.d_model)
+        ).reshape(-1, qk_dim)
         k = F.rms_norm(
-            k.view(-1, self.n_head, self.head_dim),
+            k.view(-1, n_heads_local, self.head_dim),
             (self.head_dim,),
-        ).reshape(-1, self.d_model)
+        ).reshape(-1, qk_dim)
 
         attn_output = self.attn(q, k, v)
         output, _ = self.o_proj(attn_output)
@@ -132,8 +135,8 @@ class FogenAttention(nn.Module):
         positions: torch.Tensor,
     ) -> torch.Tensor:
         qkv, _ = self.qkv_proj(x)
-        q, k, v = qkv.split(
-            [self.d_model, self.d_model, self.d_model], dim=-1)
+        # Split into equal thirds — works regardless of TP sharding
+        q, k, v = qkv.chunk(3, dim=-1)
         return self.forward_projected(q, k, v, ve, positions)
 
 
@@ -179,10 +182,11 @@ class FogenBlock(nn.Module):
 
         if mode == "parallel_fused":
             projected = F.linear(normalized, self.fused_qkv_up_weight)
-            q, k, v, mlp_hidden = projected.split(
-                [self.d_model, self.d_model, self.d_model, 4 * self.d_model],
-                dim=-1,
-            )
+            # Split dynamically based on actual tensor size (TP-safe)
+            qkv_size = projected.shape[-1] * 3 // 7  # 3d out of 3d+4d = 7d
+            mlp_size = projected.shape[-1] - qkv_size
+            qkv_part, mlp_hidden = projected.split([qkv_size, mlp_size], dim=-1)
+            q, k, v = qkv_part.chunk(3, dim=-1)
             attention = self.attn.forward_projected(q, k, v, ve, positions)
             mlp = self.mlp.down(F.relu(mlp_hidden).square())[0]
             return x + attention + mlp
