@@ -1,8 +1,8 @@
 """Serving benchmark: compare execution modes under vLLM continuous batching.
 
 Launches the vLLM OpenAI-compatible server for each execution mode,
-runs `vllm bench serve` at multiple input/output length combinations,
-and collects results into a single JSON.
+runs `vllm bench serve` at multiple concurrency levels and input/output
+length combinations, and collects results into a single JSON.
 
 Usage:
     cd blackwell/vllm_plugin
@@ -57,7 +57,8 @@ def launch_server(hf_dir, mode, port=8000, dtype="bfloat16"):
     return proc
 
 
-def run_benchmark(hf_dir, port, num_prompts, input_len, output_len):
+def run_benchmark(hf_dir, port, num_prompts, input_len, output_len,
+                  request_rate="inf", max_concurrency=None):
     """Run vllm bench serve and parse the output."""
     vllm_bin = os.path.join(os.path.dirname(sys.executable), "vllm")
     cmd = [
@@ -66,11 +67,14 @@ def run_benchmark(hf_dir, port, num_prompts, input_len, output_len):
         "--model", hf_dir,
         "--port", str(port),
         "--num-prompts", str(num_prompts),
-        "--request-rate", "inf",
+        "--request-rate", str(request_rate),
         "--random-input-len", str(input_len),
         "--random-output-len", str(output_len),
         "--temperature", "0",
     ]
+    if max_concurrency is not None:
+        cmd += ["--max-concurrency", str(max_concurrency)]
+
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
     output = result.stdout + result.stderr
 
@@ -81,7 +85,6 @@ def run_benchmark(hf_dir, port, num_prompts, input_len, output_len):
         if "Serving Benchmark Result" in stripped:
             in_results = True
         if in_results and stripped:
-            # Parse lines like "Mean TTFT (ms):                          122.93"
             match = re.match(r'^(.+?):\s+([\d.]+)', stripped)
             if match:
                 key = match.group(1).strip()
@@ -94,9 +97,8 @@ def run_benchmark(hf_dir, port, num_prompts, input_len, output_len):
                 metrics[clean_key] = val
 
     if not metrics:
-        # Dump last 1000 chars for debugging
-        print(f"    [DEBUG] No metrics parsed. Last 1000 chars of output:")
-        print(f"    {output[-1000:]}")
+        print(f"    [DEBUG] No metrics parsed. Last 500 chars of output:")
+        print(f"    {output[-500:]}")
 
     return metrics
 
@@ -124,6 +126,9 @@ def main():
                         default=[128, 512])
     parser.add_argument("--output-lens", type=int, nargs="+",
                         default=[32, 128])
+    parser.add_argument("--concurrency-levels", type=int, nargs="+",
+                        default=[1, 8, 64, 200],
+                        help="Max concurrency levels to test")
     args = parser.parse_args()
 
     results = []
@@ -135,36 +140,45 @@ def main():
 
         proc = launch_server(args.hf_dir, mode, args.port, args.dtype)
 
-        for input_len in args.input_lens:
-            for output_len in args.output_lens:
-                print(f"\n  input={input_len}, output={output_len}, "
-                      f"prompts={args.num_prompts}")
-                try:
-                    metrics = run_benchmark(
-                        args.hf_dir, args.port,
-                        args.num_prompts, input_len, output_len)
+        for concurrency in args.concurrency_levels:
+            for input_len in args.input_lens:
+                for output_len in args.output_lens:
+                    # Use fewer prompts for low-concurrency (otherwise takes forever)
+                    n = min(args.num_prompts, max(50, concurrency * 5))
+                    rate = "inf" if concurrency > 1 else "inf"
 
-                    entry = {
-                        "mode": mode,
-                        "input_len": input_len,
-                        "output_len": output_len,
-                        "num_prompts": args.num_prompts,
-                        **metrics,
-                    }
-                    results.append(entry)
+                    print(f"\n  C={concurrency}, input={input_len}, output={output_len}, "
+                          f"prompts={n}")
+                    try:
+                        metrics = run_benchmark(
+                            args.hf_dir, args.port,
+                            n, input_len, output_len,
+                            request_rate=rate,
+                            max_concurrency=concurrency)
 
-                    tput = metrics.get("output_token_throughput", 0)
-                    ttft = metrics.get("mean_ttft", 0)
-                    tpot = metrics.get("mean_tpot", 0)
-                    print(f"    {tput:.0f} tok/s | TTFT {ttft:.1f}ms | TPOT {tpot:.2f}ms")
-                except Exception as e:
-                    print(f"    ERROR: {e}")
-                    results.append({
-                        "mode": mode,
-                        "input_len": input_len,
-                        "output_len": output_len,
-                        "error": str(e),
-                    })
+                        entry = {
+                            "mode": mode,
+                            "max_concurrency": concurrency,
+                            "input_len": input_len,
+                            "output_len": output_len,
+                            "num_prompts": n,
+                            **metrics,
+                        }
+                        results.append(entry)
+
+                        tput = metrics.get("output_token_throughput", 0)
+                        ttft = metrics.get("mean_ttft", 0)
+                        tpot = metrics.get("mean_tpot", 0)
+                        print(f"    {tput:.0f} tok/s | TTFT {ttft:.1f}ms | TPOT {tpot:.2f}ms")
+                    except Exception as e:
+                        print(f"    ERROR: {e}")
+                        results.append({
+                            "mode": mode,
+                            "max_concurrency": concurrency,
+                            "input_len": input_len,
+                            "output_len": output_len,
+                            "error": str(e),
+                        })
 
         kill_server(proc)
         print(f"  Server stopped")
