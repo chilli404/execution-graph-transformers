@@ -9,7 +9,7 @@ model:
   ctx_len: 1024
   execution_mode: sequential
 
-batch_seqs: 64
+batch_seqs: 84
 
 train:
   steps: 12000
