@@ -74,19 +74,28 @@ def run_benchmark(hf_dir, port, num_prompts, input_len, output_len):
     output = result.stdout + result.stderr
 
     metrics = {}
+    in_results = False
     for line in output.split("\n"):
-        line = line.strip()
-        # Parse lines like "Mean TTFT (ms):                          122.93"
-        match = re.match(r'^(.+?):\s+([\d.]+)\s*$', line)
-        if match:
-            key = match.group(1).strip()
-            try:
-                val = float(match.group(2))
-            except ValueError:
-                continue
-            clean_key = re.sub(r'\s*\(.*?\)\s*', ' ', key).strip()
-            clean_key = clean_key.lower().replace(' ', '_')
-            metrics[clean_key] = val
+        stripped = line.strip()
+        if "Serving Benchmark Result" in stripped:
+            in_results = True
+        if in_results and stripped:
+            # Parse lines like "Mean TTFT (ms):                          122.93"
+            match = re.match(r'^(.+?):\s+([\d.]+)', stripped)
+            if match:
+                key = match.group(1).strip()
+                try:
+                    val = float(match.group(2))
+                except ValueError:
+                    continue
+                clean_key = re.sub(r'\s*\(.*?\)\s*', ' ', key).strip()
+                clean_key = clean_key.lower().replace(' ', '_')
+                metrics[clean_key] = val
+
+    if not metrics:
+        # Dump last 1000 chars for debugging
+        print(f"    [DEBUG] No metrics parsed. Last 1000 chars of output:")
+        print(f"    {output[-1000:]}")
 
     return metrics
 
