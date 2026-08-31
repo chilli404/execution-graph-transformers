@@ -207,9 +207,30 @@ class FogenBlock(nn.Module):
             mlp = self.mlp.down(F.relu(mlp_hidden).square())[0]
             return x + attention + mlp
 
+        if mode == "parallel" and x.is_cuda:
+            # CUDA stream overlap: attention (with its all-reduce) runs on
+            # one stream while MLP runs on another. The MLP compute overlaps
+            # with attention's NCCL all-reduce, which is the TP speedup.
+            if not hasattr(self, "_attn_stream"):
+                self._attn_stream = torch.cuda.Stream(device=x.device)
+                self._mlp_stream = torch.cuda.Stream(device=x.device)
+            current = torch.cuda.current_stream(x.device)
+            self._attn_stream.wait_stream(current)
+            self._mlp_stream.wait_stream(current)
+            with torch.cuda.stream(self._attn_stream):
+                attention = self.attn(normalized, ve, positions)
+            with torch.cuda.stream(self._mlp_stream):
+                mlp = self.mlp(normalized)
+            current.wait_stream(self._attn_stream)
+            current.wait_stream(self._mlp_stream)
+            attention.record_stream(current)
+            mlp.record_stream(current)
+            return x + attention + mlp
+
         attention = self.attn(normalized, ve, positions)
 
         if mode == "parallel":
+            # CPU fallback (no stream overlap)
             return x + attention + self.mlp(normalized)
 
         if mode != "sequential":
