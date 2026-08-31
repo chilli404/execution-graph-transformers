@@ -68,8 +68,15 @@ class FogenAttention(nn.Module):
     ):
         super().__init__()
         self.d_model = d_model
-        self.n_head = n_head
         self.head_dim = d_model // n_head
+
+        # Divide heads by TP — vLLM's Attention expects per-rank counts
+        from vllm.distributed import get_tensor_model_parallel_world_size
+        tp_size = get_tensor_model_parallel_world_size()
+        self.n_head = n_head
+        self.num_heads_per_tp = n_head // tp_size
+        self.q_size = self.num_heads_per_tp * self.head_dim
+        self.kv_size = self.num_heads_per_tp * self.head_dim
 
         self.qkv_proj = MergedColumnParallelLinear(
             d_model,
@@ -91,9 +98,10 @@ class FogenAttention(nn.Module):
         )
 
         self.attn = Attention(
-            num_heads=n_head,
+            num_heads=self.num_heads_per_tp,
             head_size=self.head_dim,
             scale=1.0 / math.sqrt(self.head_dim),
+            num_kv_heads=self.num_heads_per_tp,
             cache_config=cache_config,
             prefix=f"{prefix}.attn",
         )
@@ -133,14 +141,6 @@ class FogenAttention(nn.Module):
         ).reshape(-1, qk_dim)
 
         attn_output = self.attn(q, k, v)
-        # vLLM v0.28 Attention all-gathers internally (output is full d_model).
-        # RowParallelLinear expects sharded input (d_model // tp).
-        # Re-shard by selecting this rank's slice.
-        if attn_output.shape[-1] != self.o_proj.weight.shape[-1]:
-            from vllm.distributed import get_tensor_model_parallel_rank
-            rank = get_tensor_model_parallel_rank()
-            shard = self.o_proj.weight.shape[-1]
-            attn_output = attn_output[..., rank * shard:(rank + 1) * shard].contiguous()
         output, _ = self.o_proj(attn_output)
         return output
 
@@ -151,9 +151,9 @@ class FogenAttention(nn.Module):
         positions: torch.Tensor,
     ) -> torch.Tensor:
         qkv, _ = self.qkv_proj(x)
-        q, k, v = qkv.chunk(3, dim=-1)
-        return self.forward_projected(
-            q.contiguous(), k.contiguous(), v.contiguous(), ve, positions)
+        q, k, v = qkv.split(
+            [self.q_size, self.kv_size, self.kv_size], dim=-1)
+        return self.forward_projected(q, k, v, ve, positions)
 
 
 class FogenBlock(nn.Module):
