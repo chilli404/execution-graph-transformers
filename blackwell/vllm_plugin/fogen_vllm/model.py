@@ -77,8 +77,7 @@ class FogenAttention(nn.Module):
             bias=False,
         )
         self.o_proj = RowParallelLinear(
-            d_model, d_model, bias=False,
-            input_is_parallel=False)
+            d_model, d_model, bias=False)
 
         self.has_ve = _has_ve(layer_idx, n_layer)
         if self.has_ve:
@@ -134,12 +133,14 @@ class FogenAttention(nn.Module):
         ).reshape(-1, qk_dim)
 
         attn_output = self.attn(q, k, v)
-        # Attention may return full d_model after internal all-gather;
-        # RowParallelLinear expects sharded input (d_model // tp)
-        import os
-        if os.environ.get("FOGEN_DEBUG"):
-            print(f"[DEBUG] q={q.shape} attn_out={attn_output.shape} "
-                  f"o_proj_weight={self.o_proj.weight.shape}", flush=True)
+        # vLLM v0.28 Attention all-gathers internally (output is full d_model).
+        # RowParallelLinear expects sharded input (d_model // tp).
+        # Re-shard by selecting this rank's slice.
+        if attn_output.shape[-1] != self.o_proj.weight.shape[-1]:
+            from vllm.distributed import get_tensor_model_parallel_rank
+            rank = get_tensor_model_parallel_rank()
+            shard = self.o_proj.weight.shape[-1]
+            attn_output = attn_output[..., rank * shard:(rank + 1) * shard].contiguous()
         output, _ = self.o_proj(attn_output)
         return output
 
