@@ -1,9 +1,34 @@
 import torch
 import torch.nn.functional as F
-from transformers import GenerationMixin, PretrainedConfig, PreTrainedModel
+from transformers import (
+    AutoConfig,
+    AutoModelForCausalLM,
+    GenerationMixin,
+    PretrainedConfig,
+    PreTrainedModel,
+)
+from transformers.cache_utils import DynamicCache
 from transformers.modeling_outputs import CausalLMOutputWithPast
 
 from fogen.model import GPT, ModelConfig
+
+
+def _is_empty_cache(cache) -> bool:
+    """True for None or a freshly-constructed, not-yet-populated DynamicCache."""
+    if cache is None:
+        return True
+    if isinstance(cache, DynamicCache):
+        return not cache.layers or cache.layers[0].keys is None
+    return False
+
+
+def _to_legacy_cache(cache):
+    """Convert a DynamicCache (or None) to GPT.forward_cached's (k, v)-list format."""
+    if _is_empty_cache(cache):
+        return None
+    if isinstance(cache, DynamicCache):
+        return [(layer.keys, layer.values) for layer in cache.layers]
+    return cache
 
 
 class FogenConfig(PretrainedConfig):
@@ -23,6 +48,7 @@ class FogenConfig(PretrainedConfig):
         super().__init__(**kwargs)
         self.vocab_size = vocab_size
         self.n_layer = n_layer
+        self.num_hidden_layers = n_layer  # transformers cache/generation utils expect this name
         self.d_model = d_model
         self.n_head = n_head
         self.ctx_len = ctx_len
@@ -55,6 +81,12 @@ class FogenForCausalLM(PreTrainedModel, GenerationMixin):
     def _init_weights(self, module):
         pass
 
+    @classmethod
+    def from_pretrained(cls, *args, **kwargs):
+        model = super().from_pretrained(*args, **kwargs)
+        model.model._rebuild_rope_cache()
+        return model
+
     def get_input_embeddings(self):
         return self.model.wte
 
@@ -78,8 +110,9 @@ class FogenForCausalLM(PreTrainedModel, GenerationMixin):
     ):
         mode = execution_mode or self.config.execution_mode
         if use_cache or past_key_values is not None:
-            logits, cache = self.model.forward_cached(
-                input_ids, cache=past_key_values, mode=mode)
+            logits, new_cache = self.model.forward_cached(
+                input_ids, cache=_to_legacy_cache(past_key_values), mode=mode)
+            cache = DynamicCache(ddp_cache_data=new_cache)
         else:
             logits = self.model(input_ids, mode=mode)
             cache = None
@@ -99,10 +132,16 @@ class FogenForCausalLM(PreTrainedModel, GenerationMixin):
     def prepare_inputs_for_generation(
         self, input_ids, past_key_values=None, **kwargs
     ):
-        if past_key_values is not None:
+        if not _is_empty_cache(past_key_values):
             input_ids = input_ids[:, -1:]
         return {
             "input_ids": input_ids,
             "past_key_values": past_key_values,
             "use_cache": True,
         }
+
+
+# Register with transformers' Auto* factories so AutoConfig/AutoModelForCausalLM
+# can resolve config.json's "model_type": "fogen" once this module is imported.
+AutoConfig.register("fogen", FogenConfig)
+AutoModelForCausalLM.register(FogenConfig, FogenForCausalLM)

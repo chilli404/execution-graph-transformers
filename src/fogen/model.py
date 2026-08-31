@@ -195,6 +195,23 @@ class GPT(nn.Module):
 
         self.init_weights()
 
+    def _rebuild_rope_cache(self) -> None:
+        """Recompute rope_cos/rope_sin in place on the module's current device.
+
+        Needed after `transformers.PreTrainedModel.from_pretrained`, whose
+        meta-device fast-init path leaves non-persistent buffers (never part
+        of the checkpoint) materialized with uninitialized memory instead of
+        their computed values.
+        """
+        half = self.cfg.head_dim // 2
+        device = self.wte.weight.device
+        inv_freq = 1.0 / (10000.0 ** (
+            torch.arange(half, device=device, dtype=torch.float32) / half))
+        t = torch.arange(self.cfg.ctx_len, device=device, dtype=torch.float32)
+        freqs = torch.outer(t, inv_freq)
+        self.rope_cos.copy_(freqs.cos()[None, None])
+        self.rope_sin.copy_(freqs.sin()[None, None])
+
     def init_weights(self):
         # nanochat scheme: zero-init residual projections and lm_head so the
         # model starts as (approximately) the identity over token embeddings

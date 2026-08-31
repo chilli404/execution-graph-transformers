@@ -4,6 +4,15 @@ Run from the vllm_plugin directory with the vLLM virtualenv:
     uv run --python .venv-vllm/bin/python pytest tests/ -v
 
 Requires a HF-exported checkpoint (see scripts/export_hf_checkpoint.py).
+
+Note on max_logit_diff: expect a few units of absolute diff (not ~0) even on
+a correct plugin. Traced layer-by-layer, it's floating-point drift between
+vLLM's Triton attention kernel and PyTorch's native ops, growing smoothly
+in proportion to the residual stream's own magnitude (no jump at any one
+layer, which is what a real bug would look like). Swapping HF's own
+attention backend or toggling TF32 matmul reproduces only a fraction of the
+gap, confirming vLLM's kernels as the dominant source. top_token_match and
+exact_match are the real correctness gates.
 """
 
 import argparse
@@ -15,6 +24,7 @@ import torch
 
 def compare_logits(hf_dir: str, mode: str = "sequential", max_tokens: int = 32):
     """Compare first-token logits between HF model and vLLM."""
+    import fogen.hf_model  # noqa: F401 registers "fogen" with transformers Auto*
     from transformers import AutoModelForCausalLM, AutoConfig
 
     # Load HF reference
@@ -40,10 +50,12 @@ def compare_logits(hf_dir: str, mode: str = "sequential", max_tokens: int = 32):
         trust_remote_code=True,
         dtype="float32",
         enforce_eager=True,
+        max_logprobs=config.vocab_size,
+        hf_overrides={"execution_mode": mode},
     )
 
     sampling = SamplingParams(max_tokens=1, temperature=0, logprobs=config.vocab_size)
-    outputs = llm.generate(prompt_token_ids=[[1, 100, 200, 300, 400]],
+    outputs = llm.generate(prompts=[[1, 100, 200, 300, 400]],
                            sampling_params=sampling)
 
     vllm_logprobs = outputs[0].outputs[0].logprobs[0]
@@ -70,6 +82,7 @@ def compare_logits(hf_dir: str, mode: str = "sequential", max_tokens: int = 32):
 
 def test_greedy_generation(hf_dir: str, max_tokens: int = 32):
     """Compare greedy generation between HF and vLLM."""
+    import fogen.hf_model  # noqa: F401 registers "fogen" with transformers Auto*
     from transformers import AutoModelForCausalLM
 
     hf_model = AutoModelForCausalLM.from_pretrained(
@@ -95,7 +108,7 @@ def test_greedy_generation(hf_dir: str, max_tokens: int = 32):
 
     sampling = SamplingParams(max_tokens=max_tokens, temperature=0)
     outputs = llm.generate(
-        prompt_token_ids=[[1, 100, 200, 300, 400]],
+        prompts=[[1, 100, 200, 300, 400]],
         sampling_params=sampling,
     )
     vllm_tokens = [1, 100, 200, 300, 400] + list(outputs[0].outputs[0].token_ids)
@@ -127,7 +140,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     results = []
-    for mode in ["sequential", "parallel"]:
+    for mode in ["sequential", "parallel", "parallel_fused"]:
         results.append(compare_logits(args.hf_dir, mode))
     results.append(test_greedy_generation(args.hf_dir))
 

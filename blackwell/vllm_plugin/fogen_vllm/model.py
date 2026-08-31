@@ -11,8 +11,9 @@ from typing import Iterable, Optional, Tuple
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from vllm.attention import Attention, AttentionMetadata
+from vllm.compilation.decorators import support_torch_compile
 from vllm.config import CacheConfig, VllmConfig
+from vllm.model_executor.layers.attention import Attention
 from vllm.model_executor.layers.linear import (
     ColumnParallelLinear,
     MergedColumnParallelLinear,
@@ -20,13 +21,11 @@ from vllm.model_executor.layers.linear import (
 )
 from vllm.model_executor.layers.logits_processor import LogitsProcessor
 from vllm.model_executor.layers.rotary_embedding import get_rope
-from vllm.model_executor.layers.sampler import get_sampler
 from vllm.model_executor.layers.vocab_parallel_embedding import (
     ParallelLMHead,
     VocabParallelEmbedding,
 )
 from vllm.model_executor.model_loader.weight_utils import default_weight_loader
-from vllm.model_executor.sampling_metadata import SamplingMetadata
 from vllm.sequence import IntermediateTensors
 
 
@@ -87,9 +86,7 @@ class FogenAttention(nn.Module):
 
         self.rotary_emb = get_rope(
             head_size=self.head_dim,
-            rotary_dim=self.head_dim,
             max_position=max_position,
-            base=10000,
             is_neox_style=True,
         )
 
@@ -101,18 +98,14 @@ class FogenAttention(nn.Module):
             prefix=f"{prefix}.attn",
         )
 
-    def forward(
+    def forward_projected(
         self,
-        x: torch.Tensor,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
         ve: Optional[torch.Tensor],
         positions: torch.Tensor,
-        kv_cache: torch.Tensor,
-        attn_metadata: AttentionMetadata,
     ) -> torch.Tensor:
-        qkv, _ = self.qkv_proj(x)
-        q, k, v = qkv.split(
-            [self.d_model, self.d_model, self.d_model], dim=-1)
-
         if self.has_ve and ve is not None:
             v = self.ve_lambda_0 * v + self.ve_lambda_1 * ve
 
@@ -128,9 +121,20 @@ class FogenAttention(nn.Module):
             (self.head_dim,),
         ).reshape(-1, self.d_model)
 
-        attn_output = self.attn(q, k, v, kv_cache, attn_metadata)
+        attn_output = self.attn(q, k, v)
         output, _ = self.o_proj(attn_output)
         return output
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        ve: Optional[torch.Tensor],
+        positions: torch.Tensor,
+    ) -> torch.Tensor:
+        qkv, _ = self.qkv_proj(x)
+        q, k, v = qkv.split(
+            [self.d_model, self.d_model, self.d_model], dim=-1)
+        return self.forward_projected(q, k, v, ve, positions)
 
 
 class FogenBlock(nn.Module):
@@ -154,33 +158,56 @@ class FogenBlock(nn.Module):
         )
         self.mlp = FogenMLP(d_model)
         self.d_model = d_model
+        # Populated once in FogenForCausalLM.load_weights (after qkv_proj and
+        # mlp.up are loaded) so parallel_fused is a plain tensor op with no
+        # first-call caching branch — that mutable-state pattern defeats
+        # Dynamo tracing under torch.compile.
+        self.register_buffer(
+            "fused_qkv_up_weight",
+            torch.zeros(3 * d_model + 4 * d_model, d_model),
+            persistent=False,
+        )
 
     def forward(
         self,
         x: torch.Tensor,
         ve: Optional[torch.Tensor],
         positions: torch.Tensor,
-        kv_cache: torch.Tensor,
-        attn_metadata: AttentionMetadata,
         mode: str = "sequential",
     ) -> torch.Tensor:
         normalized = self.norm(x)
 
         if mode == "parallel_fused":
-            # Fused QKV + MLP-up in one matmul is not implemented
-            # in vLLM parallel linear layers; fall back to plain parallel
-            mode = "parallel"
+            projected = F.linear(normalized, self.fused_qkv_up_weight)
+            q, k, v, mlp_hidden = projected.split(
+                [self.d_model, self.d_model, self.d_model, 4 * self.d_model],
+                dim=-1,
+            )
+            attention = self.attn.forward_projected(q, k, v, ve, positions)
+            mlp = self.mlp.down(F.relu(mlp_hidden).square())[0]
+            return x + attention + mlp
 
-        attention = self.attn(normalized, ve, positions, kv_cache, attn_metadata)
+        attention = self.attn(normalized, ve, positions)
 
         if mode == "parallel":
             return x + attention + self.mlp(normalized)
+
+        if mode != "sequential":
+            raise ValueError(f"Unknown execution mode: {mode}")
 
         # Sequential: FFN reads post-attention state
         x = x + attention
         return x + self.mlp(self.norm(x))
 
 
+@support_torch_compile(
+    dynamic_arg_dims={
+        "input_ids": {0: "b"},
+        "positions": {0: "b"},
+        "intermediate_tensors": {0: "b"},
+        "inputs_embeds": {0: "b"},
+    },
+)
 class FogenForCausalLM(nn.Module):
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
@@ -225,18 +252,22 @@ class FogenForCausalLM(nn.Module):
         self.final_norm = FogenRMSNorm(config.d_model)
         self.lm_head = ParallelLMHead(
             config.vocab_size, config.d_model, bias=False)
-        self.logits_processor = LogitsProcessor(config.vocab_size)
-        self.sampler = get_sampler()
+        self.logits_processor = LogitsProcessor(
+            config.vocab_size, soft_cap=15.0)
+
+    def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
+        return self.wte(input_ids)
 
     def forward(
         self,
         input_ids: torch.Tensor,
         positions: torch.Tensor,
-        kv_caches: list[torch.Tensor],
-        attn_metadata: AttentionMetadata,
         intermediate_tensors: Optional[IntermediateTensors] = None,
+        inputs_embeds: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-        x = self.embed_norm(self.wte(input_ids))
+        x = self.embed_norm(
+            inputs_embeds if inputs_embeds is not None
+            else self.wte(input_ids))
 
         for i, block in enumerate(self.blocks):
             ve = (
@@ -244,10 +275,7 @@ class FogenForCausalLM(nn.Module):
                 if str(i) in self.value_embeds
                 else None
             )
-            x = block(
-                x, ve, positions, kv_caches[i],
-                attn_metadata, mode=self.layer_modes[i],
-            )
+            x = block(x, ve, positions, mode=self.layer_modes[i])
 
         x = self.final_norm(x)
         return x
@@ -255,19 +283,10 @@ class FogenForCausalLM(nn.Module):
     def compute_logits(
         self,
         hidden_states: torch.Tensor,
-        sampling_metadata: SamplingMetadata,
-    ) -> torch.Tensor:
-        # LogitsProcessor applies lm_head and gathers for the sampling
-        # positions — it does not modify logit values
-        logits = self.logits_processor(self.lm_head, hidden_states,
-                                       sampling_metadata)
-        if logits is not None:
-            logits = 15.0 * torch.tanh(logits / 15.0)
-        return logits
-
-    def sample(self, logits: torch.Tensor,
-               sampling_metadata: SamplingMetadata):
-        return self.sampler(logits, sampling_metadata)
+    ) -> Optional[torch.Tensor]:
+        # LogitsProcessor applies lm_head, gathers for the sampling
+        # positions, and applies the softcap (scale=soft_cap*tanh(x/soft_cap))
+        return self.logits_processor(self.lm_head, hidden_states)
 
     def load_weights(self, weights: Iterable[Tuple[str, torch.Tensor]]):
         params = dict(self.named_parameters())
@@ -327,9 +346,9 @@ class FogenForCausalLM(nn.Module):
                 qkv_buffers.setdefault(layer, {})[2] = loaded_weight
                 continue
 
-            # Direct mapping
-            target = name.replace("model.", "")
-            if target in params:
+            # Direct mapping (covers wo -> o_proj, mlp.up/down, wte, lm_head)
+            target = mapping.get(name)
+            if target is not None and target in params:
                 default_weight_loader(params[target], loaded_weight)
 
         # Load merged QKV weights
@@ -338,3 +357,10 @@ class FogenForCausalLM(nn.Module):
             if target in params:
                 merged = torch.cat([qkv[0], qkv[1], qkv[2]], dim=0)
                 default_weight_loader(params[target], merged)
+
+        # Populate each block's fused parallel_fused weight from the
+        # now-loaded qkv_proj and mlp.up weights.
+        for block in self.blocks:
+            block.fused_qkv_up_weight.copy_(
+                torch.cat([block.attn.qkv_proj.weight, block.mlp.up.weight], dim=0)
+            )
