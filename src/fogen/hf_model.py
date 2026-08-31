@@ -48,10 +48,14 @@ class FogenConfig(PretrainedConfig):
         super().__init__(**kwargs)
         self.vocab_size = vocab_size
         self.n_layer = n_layer
-        self.num_hidden_layers = n_layer  # transformers cache/generation utils expect this name
+        self.num_hidden_layers = n_layer
         self.d_model = d_model
+        self.hidden_size = d_model
+        self.intermediate_size = 4 * d_model
+        self.num_attention_heads = n_head
         self.n_head = n_head
         self.ctx_len = ctx_len
+        self.max_position_embeddings = ctx_len
         self.execution_mode = execution_mode
         self.architectures = ["FogenForCausalLM"]
 
