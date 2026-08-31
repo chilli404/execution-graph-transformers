@@ -351,10 +351,11 @@ class FogenForCausalLM(nn.Module):
                 for shard_id, shard_weight in sorted(qkv.items()):
                     weight_loader(param, shard_weight, shard_id)
 
-        # Populate each block's fused parallel_fused weight from the
-        # now-loaded (and sharded) qkv_proj and mlp.up weights.
+        # Populate each block's fused weight from loaded (possibly sharded) weights.
+        # Skip if sizes don't match (tensor parallelism changes shard dimensions).
         for block in self.blocks:
-            block.fused_qkv_up_weight.copy_(
-                torch.cat([block.attn.qkv_proj.weight, block.mlp.up.weight],
-                          dim=0)
-            )
+            fused = torch.cat([block.attn.qkv_proj.weight, block.mlp.up.weight], dim=0)
+            if block.fused_qkv_up_weight.shape == fused.shape:
+                block.fused_qkv_up_weight.copy_(fused)
+            else:
+                block.fused_qkv_up_weight = fused
