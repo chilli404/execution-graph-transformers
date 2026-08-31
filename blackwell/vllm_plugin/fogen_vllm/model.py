@@ -291,30 +291,12 @@ class FogenForCausalLM(nn.Module):
     def load_weights(self, weights: Iterable[Tuple[str, torch.Tensor]]):
         params = dict(self.named_parameters())
 
-        # Weight name mapping from HF checkpoint to vLLM model
-        mapping = {
-            "model.wte.weight": "wte.weight",
-            "model.lm_head.weight": "lm_head.weight",
-        }
-        for i in range(self.n_layer):
-            p = f"model.blocks.{i}"
-            t = f"blocks.{i}"
-            mapping[f"{p}.attn.wq.weight"] = f"{t}.attn.qkv_proj.weight"
-            mapping[f"{p}.attn.wk.weight"] = f"{t}.attn.qkv_proj.weight"
-            mapping[f"{p}.attn.wv.weight"] = f"{t}.attn.qkv_proj.weight"
-            mapping[f"{p}.attn.wo.weight"] = f"{t}.attn.o_proj.weight"
-            mapping[f"{p}.mlp.up.weight"] = f"{t}.mlp.up.weight"
-            mapping[f"{p}.mlp.down.weight"] = f"{t}.mlp.down.weight"
-            if _has_ve(i, self.n_layer):
-                mapping[f"{p}.attn.ve_lambdas"] = None  # handled separately
-
         # Collect QKV weights per layer for merged loading
-        qkv_buffers = {}
+        qkv_buffers: dict[str, dict[int, torch.Tensor]] = {}
 
         for name, loaded_weight in weights:
-            # Handle ve_lambdas
+            # Handle ve_lambdas (scalars, not sharded)
             if "ve_lambdas" in name:
-                # e.g. model.blocks.1.attn.ve_lambdas -> blocks.1.attn.ve_lambda_0/1
                 layer_str = name.split(".")[2]
                 target_0 = f"blocks.{layer_str}.attn.ve_lambda_0"
                 target_1 = f"blocks.{layer_str}.attn.ve_lambda_1"
@@ -326,13 +308,15 @@ class FogenForCausalLM(nn.Module):
 
             # Handle value embeddings
             if "value_embeds" in name:
-                # model.value_embeds.1.weight -> value_embeds.1.weight
                 target = name.replace("model.", "")
                 if target in params:
-                    default_weight_loader(params[target], loaded_weight)
+                    param = params[target]
+                    weight_loader = getattr(param, "weight_loader",
+                                            default_weight_loader)
+                    weight_loader(param, loaded_weight)
                 continue
 
-            # Handle QKV merging
+            # Collect QKV for merged loading
             if ".attn.wq.weight" in name:
                 layer = name.split(".")[2]
                 qkv_buffers.setdefault(layer, {})[0] = loaded_weight
@@ -346,21 +330,31 @@ class FogenForCausalLM(nn.Module):
                 qkv_buffers.setdefault(layer, {})[2] = loaded_weight
                 continue
 
-            # Direct mapping (covers wo -> o_proj, mlp.up/down, wte, lm_head)
-            target = mapping.get(name)
-            if target is not None and target in params:
-                default_weight_loader(params[target], loaded_weight)
+            # Map HF names to vLLM names
+            target = name.replace("model.", "")
+            # wo -> o_proj
+            target = target.replace(".attn.wo.", ".attn.o_proj.")
+            if target in params:
+                param = params[target]
+                weight_loader = getattr(param, "weight_loader",
+                                        default_weight_loader)
+                weight_loader(param, loaded_weight)
 
-        # Load merged QKV weights
+        # Load merged QKV weights using MergedColumnParallelLinear's
+        # weight_loader which handles TP sharding per shard
         for layer, qkv in qkv_buffers.items():
             target = f"blocks.{layer}.attn.qkv_proj.weight"
             if target in params:
-                merged = torch.cat([qkv[0], qkv[1], qkv[2]], dim=0)
-                default_weight_loader(params[target], merged)
+                param = params[target]
+                weight_loader = getattr(param, "weight_loader",
+                                        default_weight_loader)
+                for shard_id, shard_weight in sorted(qkv.items()):
+                    weight_loader(param, shard_weight, shard_id)
 
         # Populate each block's fused parallel_fused weight from the
-        # now-loaded qkv_proj and mlp.up weights.
+        # now-loaded (and sharded) qkv_proj and mlp.up weights.
         for block in self.blocks:
             block.fused_qkv_up_weight.copy_(
-                torch.cat([block.attn.qkv_proj.weight, block.mlp.up.weight], dim=0)
+                torch.cat([block.attn.qkv_proj.weight, block.mlp.up.weight],
+                          dim=0)
             )
