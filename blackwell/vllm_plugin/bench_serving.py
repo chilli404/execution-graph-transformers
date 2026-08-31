@@ -25,11 +25,15 @@ def wait_for_server(port, timeout=300):
     import urllib.request
     start = time.time()
     while time.time() - start < timeout:
-        try:
-            urllib.request.urlopen(f"http://localhost:{port}/health")
-            return True
-        except Exception:
-            time.sleep(2)
+        for endpoint in ["/health", "/v1/models"]:
+            try:
+                urllib.request.urlopen(f"http://localhost:{port}{endpoint}")
+                print(f"  Server ready ({endpoint} responded after "
+                      f"{time.time()-start:.0f}s)")
+                return True
+            except Exception:
+                pass
+        time.sleep(3)
     return False
 
 
@@ -46,9 +50,11 @@ def launch_server(hf_dir, mode, port=8000, dtype="bfloat16"):
     if mode != "default":
         cmd += ["--hf-overrides", json.dumps({"execution_mode": mode})]
 
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     if not wait_for_server(port):
         proc.kill()
+        output = proc.stdout.read().decode() if proc.stdout else ""
+        print(f"Server output:\n{output[-2000:]}", file=sys.stderr)
         raise RuntimeError(f"Server failed to start for mode={mode}")
     return proc
 
