@@ -20,7 +20,7 @@ import sys
 import time
 
 
-def wait_for_server(port, timeout=120):
+def wait_for_server(port, timeout=300):
     """Wait until the vLLM server is ready."""
     import urllib.request
     start = time.time()
