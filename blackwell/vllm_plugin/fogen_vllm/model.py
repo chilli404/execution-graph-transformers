@@ -77,7 +77,8 @@ class FogenAttention(nn.Module):
             bias=False,
         )
         self.o_proj = RowParallelLinear(
-            d_model, d_model, bias=False)
+            d_model, d_model, bias=False,
+            input_is_parallel=False)
 
         self.has_ve = _has_ve(layer_idx, n_layer)
         if self.has_ve:
