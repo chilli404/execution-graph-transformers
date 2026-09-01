@@ -9,10 +9,10 @@ model:
   ctx_len: 1024
   execution_mode: sequential
 
-batch_seqs: 256
+batch_seqs: 128
 
 train:
-  steps: 38200
+  steps: 76300
   matrix_lr: 0.002
   embed_lr: 0.01
   weight_decay: 0.0
@@ -36,5 +36,5 @@ execution_training:
   memory_efficient: true
 
 checkpointing:
-  ckpt_every: 1500
+  ckpt_every: 3000
   dense_windows: []
