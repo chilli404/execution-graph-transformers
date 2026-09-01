@@ -1,8 +1,8 @@
 #!/bin/bash
 # Prepare 10B tokens of ClimbMix training data.
 #
-# Uses load_dataset (non-streaming) which downloads parquet files
-# in parallel and caches them, then tokenizes from local cache.
+# Streams from HF (downloads only what it consumes), tokenizes,
+# writes uint16 shards to data/climbmix/bpe8192/shards_10b/
 #
 # Usage: bash blackwell/prep_data_10b.sh
 set -euo pipefail
@@ -20,6 +20,7 @@ if [ -d "$SHARD_DIR" ] && ls "$SHARD_DIR"/shard_*.bin 1>/dev/null 2>&1; then
 fi
 
 echo "$(date): Preparing 10B-token ClimbMix dataset"
+echo "Shard output dir: $(pwd)/$SHARD_DIR"
 
 uv run python -u -c "
 import time
@@ -31,38 +32,37 @@ tok_dir = Path('data/climbmix/bpe8192')
 shard_dir = Path('$SHARD_DIR')
 tokenizer = load_tokenizer(str(tok_dir))
 
-# Download first 3% of ClimbMix-400B (~12B tokens).
-# load_dataset downloads parquet files in parallel and caches to disk.
-print('Downloading ClimbMix (first 3%, ~12B tokens)...')
-print('This downloads in parallel — much faster than streaming.')
-ds = load_dataset('karpathy/climbmix-400b-shuffle', split='train[:3%]')
-print(f'Downloaded {len(ds):,} documents')
+print('Streaming ClimbMix (downloads only what it consumes)...')
+ds = load_dataset('karpathy/climbmix-400b-shuffle', split='train', streaming=True)
 
 TARGET_TOKENS = 10_500_000_000
 t0 = time.time()
 doc_count = 0
-tok_estimate = 0
-total_docs = len(ds)
+tok_count = 0
 
 def doc_iter():
-    global doc_count, tok_estimate
+    global doc_count, tok_count
     for row in ds:
         doc_count += 1
         text = row['text']
-        tok_estimate += len(text) // 4
-        if doc_count % 100_000 == 0:
+        tok_count += len(tokenizer.encode(text).ids)
+        if doc_count % 50_000 == 0:
             elapsed = time.time() - t0
             docs_s = doc_count / elapsed
-            pct = 100 * doc_count / total_docs
-            print(f'  {doc_count:>10,}/{total_docs:,} ({pct:.1f}%)  '
-                  f'~{tok_estimate/1e9:.1f}B tok (est)  '
+            eta_min = (TARGET_TOKENS - tok_count) / (tok_count / elapsed) / 60 if tok_count > 0 else 0
+            n_shards = len(list(shard_dir.glob('shard_*.bin'))) if shard_dir.exists() else 0
+            print(f'  {doc_count:>10,} docs  '
+                  f'{tok_count/1e9:.2f}B/{TARGET_TOKENS/1e9:.1f}B tok  '
+                  f'{n_shards} shards  '
                   f'{elapsed/60:.1f}min  '
-                  f'{docs_s:.0f} docs/s', flush=True)
-        if tok_estimate > TARGET_TOKENS:
+                  f'{docs_s:.0f} docs/s  '
+                  f'ETA {eta_min:.0f}min', flush=True)
+        if tok_count >= TARGET_TOKENS:
+            print(f'Reached {tok_count/1e9:.2f}B tokens, stopping.', flush=True)
             return
         yield text
 
-print('Tokenizing and writing shards...')
+print(f'Tokenizing to {shard_dir} ...')
 manifest = write_shards(
     doc_iter(),
     tokenizer,
