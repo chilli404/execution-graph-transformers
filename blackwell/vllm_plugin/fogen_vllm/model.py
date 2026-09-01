@@ -207,7 +207,8 @@ class FogenBlock(nn.Module):
             mlp = self.mlp.down(F.relu(mlp_hidden).square())[0]
             return x + attention + mlp
 
-        if mode == "parallel" and x.is_cuda:
+        if (mode == "parallel" and x.is_cuda
+                and not torch.compiler.is_compiling()):
             # CUDA stream overlap: attention (with its all-reduce) runs on
             # one stream while MLP runs on another. The MLP compute overlaps
             # with attention's NCCL all-reduce, which is the TP speedup.
