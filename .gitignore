@@ -15,5 +15,6 @@ runs/
 .env.*
 background_papers/
 blackwell/results/
-results/data/
-results/figures/
+results/
+sky/
+mlruns/
