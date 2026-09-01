@@ -24,7 +24,7 @@ fi
 # Step 1: Download parquet files in parallel
 # ClimbMix has ~6543 files, ~70k docs each. 250 files ≈ 17.5M docs ≈ 12B+ tokens.
 echo "$(date): Downloading parquet files..."
-huggingface-cli download karpathy/climbmix-400b-shuffle \
+uv run huggingface-cli download karpathy/climbmix-400b-shuffle \
     --repo-type dataset \
     --include "data/train-0000[0-2]*.parquet" \
     --local-dir "$RAW_DIR"
