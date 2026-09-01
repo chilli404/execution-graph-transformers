@@ -36,12 +36,26 @@ TARGET_DOCS = 14_000_000
 print(f'Streaming {TARGET_DOCS:,} docs from ClimbMix...')
 ds = load_dataset('karpathy/climbmix-400b-shuffle', split='train', streaming=True)
 
+import time
+
+t0 = time.time()
+doc_count = 0
+tok_count = 0
+
 def doc_iter():
+    global doc_count, tok_count
     for i, row in enumerate(ds):
         if i >= TARGET_DOCS:
             break
-        if i % 1_000_000 == 0 and i > 0:
-            print(f'  streamed {i:,} docs...')
+        doc_count = i + 1
+        if doc_count % 100_000 == 0:
+            elapsed = time.time() - t0
+            docs_s = doc_count / elapsed
+            eta_min = (TARGET_DOCS - doc_count) / docs_s / 60
+            print(f'  {doc_count:>10,}/{TARGET_DOCS:,} docs  '
+                  f'{elapsed/60:.1f}min elapsed  '
+                  f'{docs_s:.0f} docs/s  '
+                  f'ETA {eta_min:.0f}min', flush=True)
         yield row['text']
 
 print('Tokenizing and writing shards...')
@@ -51,7 +65,8 @@ manifest = write_shards(
     out_dir=str(shard_dir),
     shard_tokens=100_000_000,  # 100M tokens per shard
 )
-print(f'Done: {manifest[\"total_tokens\"]:,} tokens in {len(manifest[\"shards\"])} shards')
+elapsed = time.time() - t0
+print(f'Done: {manifest[\"total_tokens\"]:,} tokens in {len(manifest[\"shards\"])} shards ({elapsed/60:.1f}min)')
 print(f'Data at: {shard_dir}')
 "
 
