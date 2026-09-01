@@ -1,8 +1,7 @@
 #!/bin/bash
-# Prepare 10B tokens of ClimbMix training data.
+# Prepare 10B tokens of ClimbMix training data (fast version).
 #
-# Streams from HF (downloads only what it consumes), tokenizes,
-# writes uint16 shards to data/climbmix/bpe8192/shards_10b/
+# Streams from HF, tokenizes with parallel workers, writes uint16 shards.
 #
 # Usage: bash blackwell/prep_data_10b.sh
 set -euo pipefail
@@ -23,54 +22,110 @@ echo "$(date): Preparing 10B-token ClimbMix dataset"
 echo "Shard output dir: $(pwd)/$SHARD_DIR"
 
 uv run python -u -c "
+import hashlib
+import json
+import os
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from queue import Queue
+from threading import Thread
+
+import numpy as np
 from datasets import load_dataset
-from fogen.data import load_tokenizer, write_shards
+from fogen.data import load_tokenizer
 
 tok_dir = Path('data/climbmix/bpe8192')
 shard_dir = Path('$SHARD_DIR')
+shard_dir.mkdir(parents=True, exist_ok=True)
+
 tokenizer = load_tokenizer(str(tok_dir))
 
-print('Streaming ClimbMix (downloads only what it consumes)...')
+TARGET_TOKENS = 10_500_000_000
+SHARD_TOKENS = 100_000_000
+N_WORKERS = os.cpu_count() or 8
+
+print(f'Streaming ClimbMix, tokenizing with {N_WORKERS} threads...')
 ds = load_dataset('karpathy/climbmix-400b-shuffle', split='train', streaming=True)
 
-TARGET_TOKENS = 10_500_000_000
 t0 = time.time()
+total_tokens = 0
 doc_count = 0
-tok_count = 0
+shard_idx = 0
+buf = []
+hashes = []
 
-def doc_iter():
-    global doc_count, tok_count
-    for row in ds:
-        doc_count += 1
-        text = row['text']
-        tok_count += len(tokenizer.encode(text).ids)
-        if doc_count % 50_000 == 0:
+def flush():
+    global buf, shard_idx
+    if not buf:
+        return
+    arr = np.asarray(buf, dtype=np.uint16)
+    p = shard_dir / f'shard_{shard_idx:05d}.bin'
+    arr.tofile(p)
+    hashes.append({'file': p.name, 'tokens': len(arr),
+                   'sha256': hashlib.sha256(arr.tobytes()).hexdigest()})
+    buf = []
+    shard_idx += 1
+
+# Batch docs, tokenize in parallel with threads
+# (tokenizers library releases the GIL, so threads give real parallelism)
+BATCH_SIZE = 1000
+
+def tokenize_batch(texts):
+    return [tokenizer.encode(t).ids for t in texts]
+
+batch = []
+reached_target = False
+
+for row in ds:
+    batch.append(row['text'])
+    doc_count += 1
+
+    if len(batch) >= BATCH_SIZE:
+        # tokenizers.Tokenizer.encode_batch is even faster
+        encoded = tokenizer.encode_batch(batch)
+        for enc in encoded:
+            ids = enc.ids
+            buf.extend(ids)
+            buf.append(0)  # eot_id
+            total_tokens += len(ids) + 1
+            if len(buf) >= SHARD_TOKENS:
+                flush()
+        batch = []
+
+        if doc_count % 50_000 < BATCH_SIZE:
             elapsed = time.time() - t0
-            docs_s = doc_count / elapsed
-            eta_min = (TARGET_TOKENS - tok_count) / (tok_count / elapsed) / 60 if tok_count > 0 else 0
-            n_shards = len(list(shard_dir.glob('shard_*.bin'))) if shard_dir.exists() else 0
+            tok_s = total_tokens / elapsed
+            eta_min = (TARGET_TOKENS - total_tokens) / tok_s / 60 if tok_s > 0 else 0
             print(f'  {doc_count:>10,} docs  '
-                  f'{tok_count/1e9:.2f}B/{TARGET_TOKENS/1e9:.1f}B tok  '
-                  f'{n_shards} shards  '
+                  f'{total_tokens/1e9:.2f}B/{TARGET_TOKENS/1e9:.1f}B tok  '
+                  f'{shard_idx} shards  '
                   f'{elapsed/60:.1f}min  '
-                  f'{docs_s:.0f} docs/s  '
+                  f'{tok_s/1e6:.1f}M tok/s  '
                   f'ETA {eta_min:.0f}min', flush=True)
-        if tok_count >= TARGET_TOKENS:
-            print(f'Reached {tok_count/1e9:.2f}B tokens, stopping.', flush=True)
-            return
-        yield text
 
-print(f'Tokenizing to {shard_dir} ...')
-manifest = write_shards(
-    doc_iter(),
-    tokenizer,
-    out_dir=str(shard_dir),
-    shard_tokens=100_000_000,
-)
+        if total_tokens >= TARGET_TOKENS:
+            reached_target = True
+            break
+
+# Flush remaining
+if batch:
+    encoded = tokenizer.encode_batch(batch)
+    for enc in encoded:
+        ids = enc.ids
+        buf.extend(ids)
+        buf.append(0)
+        total_tokens += len(ids) + 1
+        if len(buf) >= SHARD_TOKENS:
+            flush()
+flush()
+
+manifest = {'total_tokens': total_tokens, 'shards': hashes, 'dtype': 'uint16'}
+(shard_dir / 'manifest.json').write_text(json.dumps(manifest, indent=2))
+
 elapsed = time.time() - t0
-print(f'Done: {manifest[\"total_tokens\"]:,} tokens in {len(manifest[\"shards\"])} shards ({elapsed/60:.1f}min)')
+print(f'Done: {total_tokens:,} tokens in {len(hashes)} shards ({elapsed/60:.1f}min)')
+print(f'Avg throughput: {total_tokens/elapsed/1e6:.1f}M tok/s')
 "
 
 echo "$(date): 10B data prep complete"
