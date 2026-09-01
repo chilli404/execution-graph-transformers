@@ -21,9 +21,6 @@ if [ -d "$SHARD_DIR" ] && ls "$SHARD_DIR"/shard_*.bin 1>/dev/null 2>&1; then
     exit 0
 fi
 
-# Kill any leftover streaming prep
-pkill -f "prep_data_10b" 2>/dev/null || true
-
 # Step 1: Download parquet files in parallel
 # ClimbMix has ~6543 files, ~70k docs each. 250 files ≈ 17.5M docs ≈ 12B+ tokens.
 echo "$(date): Downloading parquet files..."
