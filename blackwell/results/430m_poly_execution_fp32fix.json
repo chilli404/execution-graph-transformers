@@ -1,0 +1,30 @@
+{
+  "checkpoint": "runs/430m_poly_full/ckpts/step012000.safetensors",
+  "device": "cuda",
+  "batch_size": 2,
+  "latency": {
+    "128": {
+      "sequential_seconds": 0.0034188103600172326,
+      "parallel_seconds": 0.003300110800046241,
+      "parallel_cuda_seconds": 0.0042907947800995315,
+      "parallel_fused_seconds": 0.004677350840065628,
+      "parallel_speedup": 1.035968355962269,
+      "parallel_cuda_speedup": 0.7967778780456911,
+      "parallel_fused_speedup": 0.7309287836037681
+    },
+    "512": {
+      "sequential_seconds": 0.006848187479918124,
+      "parallel_seconds": 0.006861701680027182,
+      "parallel_cuda_seconds": 0.006537540100107435,
+      "parallel_fused_seconds": 0.014422712820087327,
+      "parallel_speedup": 0.9980304885377931,
+      "parallel_cuda_speedup": 1.0475174721766654,
+      "parallel_fused_speedup": 0.47481965184665303
+    }
+  },
+  "argmax_agreement": 0.9130859375,
+  "parallel_cuda_max_logit_difference": 0.0,
+  "parallel_fused_max_logit_difference": 0.28467607498168945,
+  "symmetric_kl": 4.818901062011719,
+  "centered_logit_rmse": 0.15661247074604034
+}

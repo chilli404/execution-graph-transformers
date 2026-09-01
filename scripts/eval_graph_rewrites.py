@@ -121,6 +121,7 @@ def main():
         ):
             logits = model(sample, mode=mask).float()
         logprob = F.log_softmax(logits, dim=-1)
+        # Per-token symmetric KL in nats (batchmean = sum over vocab, mean over positions)
         symmetric_kl = (
             F.kl_div(logprob, sequential_probability, reduction="batchmean")
             + F.kl_div(sequential_logprob, logprob.exp(), reduction="batchmean")

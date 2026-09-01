@@ -26,7 +26,10 @@ def main():
     output.mkdir(parents=True, exist_ok=True)
     model.save_pretrained(output, safe_serialization=True)
     tokenizer = PreTrainedTokenizerFast(
-        tokenizer_file=str(Path(args.tokenizer_dir) / "tokenizer.json"))
+        tokenizer_file=str(Path(args.tokenizer_dir) / "tokenizer.json"),
+        bos_token="<|endoftext|>",
+        eos_token="<|endoftext|>",
+    )
     tokenizer.save_pretrained(output)
     print(output)
 

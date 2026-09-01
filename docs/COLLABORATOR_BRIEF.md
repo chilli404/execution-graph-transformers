@@ -44,7 +44,7 @@ The quality–consistency trade-off observed at 11.5M largely disappears at 117.
 
 ## Critical baselines
 
-| Method | Seq BPB | Par BPB | Agreement | Symmetric KL |
+| Method | Seq BPB | Par BPB | Agreement | Symmetric KL (nats/token) |
 |---|---:|---:|---:|---:|
 | Joint CE, no consistency | 1.1956 | 1.1990 | 81.3% | 31.5 |
 | Random mask, 1x compute | 1.2010 | 1.2030 | 78.0% | 31.7 |
@@ -52,6 +52,10 @@ The quality–consistency trade-off observed at 11.5M largely disappears at 117.
 | Graph consistency | 1.1946 | 1.1960 | **90.5%** | **4.82** |
 
 More compute and lower BPB do not create graph equivalence. Consistency specifically reduces cross-graph functional divergence.
+
+### A note on KL normalization
+
+All symmetric KL values in this project are **per-token, in nats** (natural log). They are computed as `(KL(p||q) + KL(q||p)) / 2` using PyTorch's `F.kl_div(..., reduction="batchmean")`, which sums over the vocabulary dimension and averages over batch × sequence positions. At high agreement (>95% top-token match) the KL is dominated by tail disagreements across the full 8192-token vocabulary; a value of 4.82 nats/token is consistent with <0.002 BPB degradation because BPB measures average log-loss on the correct token while KL measures distributional divergence across all tokens. The manuscript must always state "per-token symmetric KL (nats)" — never bare numbers.
 
 ## Mixed-DAG generalization
 
@@ -126,6 +130,24 @@ LAMBADA exact match:
 
 No substantial new capability is claimed; the purpose is to verify that graph equivalence does not materially destroy language-model ability.
 
+## Training cost
+
+Polymorphic training executes two forward passes per step (sequential + parallel), so forward FLOPs are approximately 2× a standard run. Backward is 1× (single `.backward()` on the combined loss). Total training FLOPs per step are approximately 1.5× a specialist at the same scale.
+
+The standard FLOPs estimate for a decoder-only Transformer forward pass is `6 × N × T` (where N = non-embedding parameters, T = tokens per batch). For polymorphic training, forward becomes `2 × 6 × N × T`, backward remains `2 × 6 × N × T`, giving `4 × 6NT` vs the specialist's `3 × 6NT` — a **1.33× total FLOPs overhead** per step.
+
+At 7B scale, `memory_efficient` mode is used: sequential and parallel paths each run forward+backward separately with gradient checkpointing. This reduces peak activation memory from ~2× to ~1× (enabling 7B on a single 96GB GPU) but adds recomputation overhead from checkpointing, bringing the effective overhead closer to **1.5–1.7×**.
+
+All scales (120M–7B) use identical step counts and data budgets for polymorphic and specialist configs. The economic argument is not "cheaper to train" but: **one polymorphic run replaces an otherwise hardware-specific family of specialist checkpoints and retains deployment optionality after training.**
+
+| Scale | Specialist tok/s | Polymorphic tok/s | Wall-clock overhead |
+|---|---:|---:|---:|
+| 120M (L40S) | — | — | ~1.4× (estimated from FLOPs) |
+| 430M (Blackwell) | — | ~9,319 | ~1.4× (estimated from FLOPs) |
+| 7B (Blackwell) | — | — | ~1.6× (estimated, memory-efficient mode) |
+
+*Note: specialist tok/s not yet measured on the same hardware. The table will be completed during manuscript assembly with matched wall-clock comparisons from training logs.*
+
 ## Negative and boundary results
 
 - CUDA streams were slower on one GPU due to resource contention.
@@ -155,3 +177,13 @@ No substantial new capability is claimed; the purpose is to verify that graph eq
 5. Final manuscript assembly and related-work audit.
 
 See `blackwell/README.md` for the operational work plan.
+
+## Quantitative claims style guide
+
+The following corrections must be observed during manuscript writing:
+
+1. **C=200 serving is a regression, not neutral.** The measured TPOT is 2.55ms (sequential) → 2.73ms (fused), which is a **7% latency regression**. Do not describe this as "~0%" or "negligible." Report it honestly: fused parallel helps at interactive concurrency but regresses slightly under heavy batching.
+
+2. **50.1% specialist agreement is not random chance.** For a vocabulary of 8192, uniform random agreement would be 0.012%. 50.1% top-1 agreement means the specialist retains substantial token-level overlap despite graph switching — it is a "catastrophic loss of graph agreement" or "near-total functional divergence," not chance-level.
+
+3. **The consistency objective is necessary among tested methods, not universally sufficient.** Write: "the consistency term is necessary among the training objectives we evaluate and is sufficient to produce high graph agreement across the tested execution family." Do not claim bare "necessary and sufficient" — the claim is bounded by the ablation set and model family tested.
