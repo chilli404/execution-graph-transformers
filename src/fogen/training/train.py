@@ -63,21 +63,54 @@ def consistency_weight(step, total, config):
     return end_weight + (start_weight - end_weight) * cosine
 
 
+def _compute_consistency(sequential_logits, parallel_logits, consistency_type,
+                         teacher_detach=False):
+    if consistency_type == "raw_mse":
+        target = sequential_logits.detach() if teacher_detach else sequential_logits
+        return F.mse_loss(parallel_logits, target)
+    if consistency_type == "kl_forward":
+        seq_logprob = F.log_softmax(
+            sequential_logits.detach() if teacher_detach else sequential_logits,
+            dim=-1)
+        par_logprob = F.log_softmax(parallel_logits, dim=-1)
+        return F.kl_div(par_logprob, seq_logprob.exp(), reduction="batchmean")
+    if consistency_type == "symmetric_kl":
+        seq_lp = F.log_softmax(
+            sequential_logits.detach() if teacher_detach else sequential_logits,
+            dim=-1)
+        par_lp = F.log_softmax(parallel_logits, dim=-1)
+        return (F.kl_div(par_lp, seq_lp.exp(), reduction="batchmean")
+                + F.kl_div(seq_lp, par_lp.exp(), reduction="batchmean")) / 2
+    if consistency_type == "jensen_shannon":
+        seq_lp = F.log_softmax(
+            sequential_logits.detach() if teacher_detach else sequential_logits,
+            dim=-1)
+        par_lp = F.log_softmax(parallel_logits, dim=-1)
+        m = (seq_lp.exp() + par_lp.exp()) / 2
+        return (F.kl_div(seq_lp, m, reduction="batchmean")
+                + F.kl_div(par_lp, m, reduction="batchmean")) / 2
+    # Default: centered_mse
+    seq_centered = sequential_logits - sequential_logits.mean(dim=-1, keepdim=True)
+    par_centered = parallel_logits - parallel_logits.mean(dim=-1, keepdim=True)
+    target = seq_centered.detach() if teacher_detach else seq_centered
+    return F.mse_loss(par_centered, target)
+
+
 def polymorphic_loss(model, inputs, targets, parallel_weight, consistency_weight,
-                     teacher_detach=False, memory_efficient=False):
+                     teacher_detach=False, memory_efficient=False,
+                     consistency_type="centered_mse"):
     if memory_efficient:
         return _polymorphic_loss_memory_efficient(
-            model, inputs, targets, parallel_weight, consistency_weight)
+            model, inputs, targets, parallel_weight, consistency_weight,
+            consistency_type=consistency_type)
     sequential_logits = model(inputs, mode="sequential")
     parallel_logits = model(inputs, mode="parallel")
     sequential_loss = F.cross_entropy(
         sequential_logits.view(-1, sequential_logits.size(-1)), targets.reshape(-1))
     parallel_loss = F.cross_entropy(
         parallel_logits.view(-1, parallel_logits.size(-1)), targets.reshape(-1))
-    sequential_centered = sequential_logits - sequential_logits.mean(dim=-1, keepdim=True)
-    parallel_centered = parallel_logits - parallel_logits.mean(dim=-1, keepdim=True)
-    consistency_target = sequential_centered.detach() if teacher_detach else sequential_centered
-    consistency = F.mse_loss(parallel_centered, consistency_target)
+    consistency = _compute_consistency(
+        sequential_logits, parallel_logits, consistency_type, teacher_detach)
     total = (
         (1 - parallel_weight) * sequential_loss
         + parallel_weight * parallel_loss
@@ -91,7 +124,8 @@ def polymorphic_loss(model, inputs, targets, parallel_weight, consistency_weight
 
 
 def _polymorphic_loss_memory_efficient(model, inputs, targets, parallel_weight,
-                                       consistency_weight):
+                                       consistency_weight,
+                                       consistency_type="centered_mse"):
     """Backward each graph separately with gradient checkpointing.
 
     Uses teacher_detach semantics for the consistency term and recomputes
@@ -104,9 +138,7 @@ def _polymorphic_loss_memory_efficient(model, inputs, targets, parallel_weight,
     sequential_loss = F.cross_entropy(
         sequential_logits.view(-1, sequential_logits.size(-1)), targets.reshape(-1))
     ((1 - parallel_weight) * sequential_loss).backward()
-    sequential_centered = (
-        sequential_logits - sequential_logits.mean(dim=-1, keepdim=True)
-    ).detach()
+    sequential_logits_detached = sequential_logits.detach()
     sequential_loss_val = sequential_loss.detach()
     del sequential_logits
 
@@ -114,12 +146,13 @@ def _polymorphic_loss_memory_efficient(model, inputs, targets, parallel_weight,
     parallel_logits = model(inputs, mode="parallel", gradient_checkpointing=True)
     parallel_loss = F.cross_entropy(
         parallel_logits.view(-1, parallel_logits.size(-1)), targets.reshape(-1))
-    parallel_centered = parallel_logits - parallel_logits.mean(dim=-1, keepdim=True)
-    consistency = F.mse_loss(parallel_centered, sequential_centered)
+    consistency = _compute_consistency(
+        sequential_logits_detached, parallel_logits, consistency_type,
+        teacher_detach=True)
     (parallel_weight * parallel_loss + consistency_weight * consistency).backward()
     parallel_loss_val = parallel_loss.detach()
     consistency_val = consistency.detach()
-    del parallel_logits, parallel_centered
+    del parallel_logits
 
     total = (
         (1 - parallel_weight) * sequential_loss_val
@@ -349,7 +382,9 @@ def main():
                     execution_cfg.get("parallel_weight", 0.5),
                     current_consistency_weight,
                     execution_cfg.get("teacher_detach", False),
-                    memory_efficient=mem_efficient)
+                    memory_efficient=mem_efficient,
+                    consistency_type=execution_cfg.get(
+                        "consistency_type", "centered_mse"))
                 execution_metrics["consistency_weight"] = torch.tensor(
                     current_consistency_weight, device=loss.device)
             else:

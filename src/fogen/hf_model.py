@@ -42,6 +42,10 @@ class FogenConfig(PretrainedConfig):
         n_head=2,
         ctx_len=2048,
         execution_mode="sequential",
+        norm_type="layernorm",
+        mlp_type="relu2",
+        use_value_embeddings=True,
+        logit_softcap=15.0,
         **kwargs,
     ):
         kwargs.setdefault("tie_word_embeddings", False)
@@ -57,6 +61,10 @@ class FogenConfig(PretrainedConfig):
         self.ctx_len = ctx_len
         self.max_position_embeddings = ctx_len
         self.execution_mode = execution_mode
+        self.norm_type = norm_type
+        self.mlp_type = mlp_type
+        self.use_value_embeddings = use_value_embeddings
+        self.logit_softcap = logit_softcap
         self.architectures = ["FogenForCausalLM"]
 
     def model_config(self):
@@ -67,6 +75,10 @@ class FogenConfig(PretrainedConfig):
             n_head=self.n_head,
             ctx_len=self.ctx_len,
             execution_mode=self.execution_mode,
+            norm_type=self.norm_type,
+            mlp_type=self.mlp_type,
+            use_value_embeddings=self.use_value_embeddings,
+            logit_softcap=self.logit_softcap,
         )
 
 

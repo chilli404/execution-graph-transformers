@@ -11,6 +11,8 @@ validated against val_bpb ~ 1.149-1.152 and the behavioral gate
 (see DECISIONS.md).
 """
 
+from __future__ import annotations
+
 import math
 from dataclasses import dataclass
 
@@ -27,6 +29,10 @@ class ModelConfig:
     n_head: int = 2
     ctx_len: int = 2048
     execution_mode: str = "sequential"
+    norm_type: str = "layernorm"
+    mlp_type: str = "relu2"
+    use_value_embeddings: bool = True
+    logit_softcap: float = 15.0
 
     @property
     def head_dim(self) -> int:
@@ -35,6 +41,22 @@ class ModelConfig:
 
 def _rmsnorm(x: torch.Tensor) -> torch.Tensor:
     return F.rms_norm(x, (x.size(-1),))
+
+
+class RMSNorm(nn.Module):
+    def __init__(self, dim: int, eps: float = 1e-6):
+        super().__init__()
+        self.weight = nn.Parameter(torch.ones(dim))
+        self.eps = eps
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x * torch.rsqrt(x.float().pow(2).mean(-1, keepdim=True) + self.eps).to(x.dtype) * self.weight
+
+
+def _normalize(x: torch.Tensor, norm_type: str) -> torch.Tensor:
+    if norm_type == "rmsnorm":
+        return F.rms_norm(x, (x.size(-1),))
+    return _rmsnorm(x)
 
 
 def _rotary(x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor) -> torch.Tensor:
@@ -56,9 +78,9 @@ class Attention(nn.Module):
         self.wk = nn.Linear(cfg.d_model, cfg.d_model, bias=False)
         self.wv = nn.Linear(cfg.d_model, cfg.d_model, bias=False)
         self.wo = nn.Linear(cfg.d_model, cfg.d_model, bias=False)
-        # ve mixing scalars (modded-nanogpt convention): v = l[0]*v + l[1]*ve
+        use_ve = cfg.use_value_embeddings and has_ve(layer_idx, cfg.n_layer)
         self.ve_lambdas = (nn.Parameter(torch.tensor([0.5, 0.5]))
-                           if has_ve(layer_idx, cfg.n_layer) else None)
+                           if use_ve else None)
 
     def forward_projected_cached(self, q, k, v, ve, cos, sin, past=None):
         B, T, C = q.shape
@@ -91,10 +113,17 @@ class Attention(nn.Module):
 class MLP(nn.Module):
     def __init__(self, cfg: ModelConfig):
         super().__init__()
-        self.up = nn.Linear(cfg.d_model, 4 * cfg.d_model, bias=False)
+        self.mlp_type = cfg.mlp_type
+        if cfg.mlp_type == "swiglu":
+            self.gate = nn.Linear(cfg.d_model, 4 * cfg.d_model, bias=False)
+            self.up = nn.Linear(cfg.d_model, 4 * cfg.d_model, bias=False)
+        else:
+            self.up = nn.Linear(cfg.d_model, 4 * cfg.d_model, bias=False)
         self.down = nn.Linear(4 * cfg.d_model, cfg.d_model, bias=False)
 
     def forward(self, x):
+        if self.mlp_type == "swiglu":
+            return self.down(F.silu(self.gate(x)) * self.up(x))
         return self.down(F.relu(self.up(x)).square())
 
 
@@ -106,22 +135,39 @@ class Block(nn.Module):
         self._attention_stream = None
         self._mlp_stream = None
         self._fused_input_weight = None
+        self._mlp_type = cfg.mlp_type
+
+    def _build_fused_weight(self):
+        weights = [self.attn.wq.weight, self.attn.wk.weight, self.attn.wv.weight]
+        if self._mlp_type == "swiglu":
+            weights += [self.mlp.gate.weight, self.mlp.up.weight]
+        else:
+            weights.append(self.mlp.up.weight)
+        self._fused_input_weight = torch.cat(weights).detach()
+
+    def _fused_mlp(self, mlp_parts):
+        if self._mlp_type == "swiglu":
+            gate_hidden, up_hidden = mlp_parts
+            return self.mlp.down(F.silu(gate_hidden) * up_hidden)
+        return self.mlp.down(F.relu(mlp_parts).square())
+
+    def _split_fused(self, projected, size):
+        if self._mlp_type == "swiglu":
+            q, k, v, gate_h, up_h = projected.split(
+                [size, size, size, 4 * size, 4 * size], dim=-1)
+            return q, k, v, (gate_h, up_h)
+        q, k, v, mlp_h = projected.split([size, size, size, 4 * size], dim=-1)
+        return q, k, v, mlp_h
 
     def forward(self, x, ve, cos, sin, mode="sequential"):
         normalized = _rmsnorm(x)
         if mode == "parallel_fused" and not self.training:
             if self._fused_input_weight is None:
-                self._fused_input_weight = torch.cat([
-                    self.attn.wq.weight,
-                    self.attn.wk.weight,
-                    self.attn.wv.weight,
-                    self.mlp.up.weight,
-                ]).detach()
+                self._build_fused_weight()
             projected = F.linear(normalized, self._fused_input_weight)
-            size = normalized.size(-1)
-            q, k, v, mlp_hidden = projected.split([size, size, size, 4 * size], dim=-1)
+            q, k, v, mlp_parts = self._split_fused(projected, normalized.size(-1))
             attention = self.attn.forward_projected(q, k, v, ve, cos, sin)
-            mlp = self.mlp.down(F.relu(mlp_hidden).square())
+            mlp = self._fused_mlp(mlp_parts)
             return x + attention + mlp
         if mode == "parallel_cuda" and x.is_cuda and not self.training:
             if self._attention_stream is None:
@@ -151,18 +197,12 @@ class Block(nn.Module):
         normalized = _rmsnorm(x)
         if mode == "parallel_fused" and not self.training:
             if self._fused_input_weight is None:
-                self._fused_input_weight = torch.cat([
-                    self.attn.wq.weight,
-                    self.attn.wk.weight,
-                    self.attn.wv.weight,
-                    self.mlp.up.weight,
-                ]).detach()
+                self._build_fused_weight()
             projected = F.linear(normalized, self._fused_input_weight)
-            size = normalized.size(-1)
-            q, k, v, mlp_hidden = projected.split([size, size, size, 4 * size], dim=-1)
+            q, k, v, mlp_parts = self._split_fused(projected, normalized.size(-1))
             attention, cache = self.attn.forward_projected_cached(
                 q, k, v, ve, cos, sin, past)
-            mlp = self.mlp.down(F.relu(mlp_hidden).square())
+            mlp = self._fused_mlp(mlp_parts)
             return x + attention + mlp, cache
         attention, cache = self.attn.forward_projected_cached(
             self.attn.wq(normalized), self.attn.wk(normalized),
@@ -181,9 +221,12 @@ class GPT(nn.Module):
         self.cfg = cfg
         self.wte = nn.Embedding(cfg.vocab_size, cfg.d_model)
         self.blocks = nn.ModuleList(Block(cfg, i) for i in range(cfg.n_layer))
-        self.value_embeds = nn.ModuleDict(
-            {str(i): nn.Embedding(cfg.vocab_size, cfg.d_model)
-             for i in range(cfg.n_layer) if has_ve(i, cfg.n_layer)})
+        if cfg.use_value_embeddings:
+            self.value_embeds = nn.ModuleDict(
+                {str(i): nn.Embedding(cfg.vocab_size, cfg.d_model)
+                 for i in range(cfg.n_layer) if has_ve(i, cfg.n_layer)})
+        else:
+            self.value_embeds = nn.ModuleDict()
         self.lm_head = nn.Linear(cfg.d_model, cfg.vocab_size, bias=False)
 
         half = cfg.head_dim // 2
@@ -268,7 +311,9 @@ class GPT(nn.Module):
             else:
                 x = b(x, ve, cos, sin, mode=layer_modes[i])
         logits = self.lm_head(_rmsnorm(x)).float()
-        return 15.0 * torch.tanh(logits / 15.0)  # nanochat logit softcap
+        if self.cfg.logit_softcap > 0:
+            logits = self.cfg.logit_softcap * torch.tanh(logits / self.cfg.logit_softcap)
+        return logits
 
     def forward_cached(self, idx: torch.Tensor, cache=None,
                        mode: str | None = None):
@@ -292,7 +337,9 @@ class GPT(nn.Module):
                 x, ve, cos, sin, layer_modes[layer], past_layers[layer])
             new_cache.append(layer_cache)
         logits = self.lm_head(_rmsnorm(x)).float()
-        return 15.0 * torch.tanh(logits / 15.0), new_cache
+        if self.cfg.logit_softcap > 0:
+            logits = self.cfg.logit_softcap * torch.tanh(logits / self.cfg.logit_softcap)
+        return logits, new_cache
 
     def loss(self, idx: torch.Tensor, targets: torch.Tensor,
              mode: str | None = None) -> torch.Tensor:

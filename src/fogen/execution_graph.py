@@ -89,8 +89,8 @@ def compile_graph_greedy(effect_costs, latency_savings, budget, scale=1.0):
 
     For non-uniform savings, uses greedy-by-ratio (savings/cost),
     which is optimal for the fractional relaxation and a good
-    approximation for the 0-1 case. Use compile_graph_dp for exact
-    solutions with non-uniform savings.
+    approximation for the 0-1 case. Use compile_graph_dp for
+    tighter solutions with non-uniform savings.
     """
     effect_costs = np.maximum(np.asarray(effect_costs, dtype=float), 0.0)
     latency_savings = np.maximum(np.asarray(latency_savings, dtype=float), 0.0)
@@ -128,10 +128,13 @@ def compile_graph_greedy(effect_costs, latency_savings, budget, scale=1.0):
 
 def compile_graph_dp(effect_costs, latency_savings, budget, scale=1.0,
                      resolution=1000):
-    """Exact 0-1 knapsack via DP. O(L * resolution) time and space.
+    """Discretized 0-1 knapsack via DP. O(L * resolution) time and space.
 
     Handles non-uniform latency savings correctly, unlike greedy-by-ratio.
-    Scales to L=128+ in milliseconds (resolution controls budget granularity).
+    Scales to L=128+ in milliseconds. The solution is exact for the
+    discretized cost grid; continuous costs are rounded to `resolution`
+    bins, so the true optimality gap is at most one bin width
+    (budget / resolution) per selected layer.
     """
     effect_costs = np.maximum(np.asarray(effect_costs, dtype=float), 0.0)
     latency_savings = np.maximum(np.asarray(latency_savings, dtype=float), 0.0)
