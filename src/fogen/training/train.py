@@ -416,7 +416,7 @@ def main():
 
         if step % 20 == 0:
             rec = {"step": step, "loss": loss.item(),
-                   "tok_s": cfg["batch_seqs"] * mcfg.ctx_len * max(step, 1)
+                   "tok_s": cfg["batch_seqs"] * mcfg.ctx_len * max(step - resume_step, 1)
                             / (time.time() - t0)}
             if guard_record is not None:
                 rec.update({f"guard_{key}": value
