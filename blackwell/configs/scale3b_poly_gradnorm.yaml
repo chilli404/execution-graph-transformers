@@ -4,10 +4,10 @@ model:
   vocab_size: 8192
   n_layer: 24
   d_model: 3072
-  n_head: 24
+  n_head: 32
   ctx_len: 1024
   execution_mode: sequential
-batch_seqs: 16
+batch_seqs: 8
 train:
   bf16_params: true
   steps: 12000
