@@ -50,26 +50,42 @@ def random_execution_mask(n_layers, parallel_probability, generator):
 
 
 def _gradnorm_cw(model, x, y, execution_cfg, rho):
-    """Compute gradient-normalized consistency weight: cw = ρ * ||∇LM|| / ||∇con||."""
+    """Compute gradient-normalized consistency weight: cw = ρ * ||∇LM|| / ||∇con||.
+
+    Uses separate forward passes to avoid retain_graph OOM at large scale.
+    Clamps output to [1e-4, 10.0] to handle early training where con≈0.
+    """
     params = [p for p in model.parameters() if p.requires_grad]
-    with torch.autocast(device_type=x.device.type, dtype=torch.bfloat16,
-                        enabled=x.device.type != "cpu"):
+    autocast_ctx = dict(device_type=x.device.type, dtype=torch.bfloat16,
+                        enabled=x.device.type != "cpu")
+    con_type = execution_cfg.get("consistency_type", "centered_mse")
+    con_temp = execution_cfg.get("consistency_temperature", 1.0)
+
+    # Forward 1: LM gradient
+    with torch.autocast(**autocast_ctx):
         seq_logits = model(x, mode="sequential")
         par_logits = model(x, mode="parallel")
         lm_loss = 0.5 * (
             F.cross_entropy(seq_logits.view(-1, seq_logits.size(-1)), y.reshape(-1))
             + F.cross_entropy(par_logits.view(-1, par_logits.size(-1)), y.reshape(-1)))
-        con_loss = _compute_consistency(
-            seq_logits, par_logits,
-            execution_cfg.get("consistency_type", "centered_mse"),
-            temperature=execution_cfg.get("consistency_temperature", 1.0))
-    g_lm = torch.autograd.grad(lm_loss, params, retain_graph=True, allow_unused=True)
-    g_con = torch.autograd.grad(con_loss, params, allow_unused=True)
+    g_lm = torch.autograd.grad(lm_loss, params, allow_unused=True)
     norm_lm = sum(g.detach().float().norm() ** 2 for g in g_lm if g is not None) ** 0.5
-    norm_con = sum(g.detach().float().norm() ** 2 for g in g_con if g is not None) ** 0.5
+    del lm_loss, seq_logits, par_logits, g_lm
     model.zero_grad(set_to_none=True)
-    cw = float(rho * norm_lm / max(norm_con, 1e-12))
-    return cw
+
+    # Forward 2: consistency gradient
+    with torch.autocast(**autocast_ctx):
+        seq_logits = model(x, mode="sequential")
+        par_logits = model(x, mode="parallel")
+        con_loss = _compute_consistency(seq_logits, par_logits, con_type,
+                                        temperature=con_temp)
+    g_con = torch.autograd.grad(con_loss, params, allow_unused=True)
+    norm_con = sum(g.detach().float().norm() ** 2 for g in g_con if g is not None) ** 0.5
+    del con_loss, seq_logits, par_logits, g_con
+    model.zero_grad(set_to_none=True)
+
+    cw = float(rho * norm_lm / max(norm_con, 1e-8))
+    return max(1e-4, min(cw, 10.0))
 
 
 def consistency_weight(step, total, config):
