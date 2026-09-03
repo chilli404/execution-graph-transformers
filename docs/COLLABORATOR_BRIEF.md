@@ -95,11 +95,16 @@ The compiler solves
 \alpha\sum_lm_ld_l\le\epsilon.
 \]
 
+**Important caveats:**
+
+- The composition law is empirical, not an exact bound. The budget ε is a predicted quality cost, not a guaranteed upper limit on actual KL divergence. The manuscript should describe ε as a "predicted divergence budget" rather than a "guarantee."
+- For uniform latency savings, greedy sort-by-cost is provably optimal. For non-uniform savings, the DP solver is exact for its discretized cost grid (resolution-dependent); the optimality gap vs. the continuous problem is at most one bin width per selected layer.
+- For deployment, a calibrated prediction margin (e.g., from held-out residual quantiles) should be added to convert the empirical prediction into a conservative budget. See `scripts/eval_compiler_calibration.py` for the calibration procedure.
+
 At the aggregate graph level:
 
 - held-out Spearman is 0.94–0.97;
 - cross-corpus ClimbMix calibration to TinyStories test remains 0.97;
-- all tested aggregate budgets are satisfied;
 - selected graphs are within at most one parallel layer of the sampled oracle.
 
 At prompt level, defects are useful rankers but not reliable 95% certificates on held-out ClimbMix prompts. This must remain a stated limitation.

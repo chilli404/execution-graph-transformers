@@ -49,6 +49,29 @@ def random_execution_mask(n_layers, parallel_probability, generator):
     return ["parallel" if value else "sequential" for value in parallel.tolist()]
 
 
+def _gradnorm_cw(model, x, y, execution_cfg, rho):
+    """Compute gradient-normalized consistency weight: cw = ρ * ||∇LM|| / ||∇con||."""
+    params = [p for p in model.parameters() if p.requires_grad]
+    with torch.autocast(device_type=x.device.type, dtype=torch.bfloat16,
+                        enabled=x.device.type != "cpu"):
+        seq_logits = model(x, mode="sequential")
+        par_logits = model(x, mode="parallel")
+        lm_loss = 0.5 * (
+            F.cross_entropy(seq_logits.view(-1, seq_logits.size(-1)), y.reshape(-1))
+            + F.cross_entropy(par_logits.view(-1, par_logits.size(-1)), y.reshape(-1)))
+        con_loss = _compute_consistency(
+            seq_logits, par_logits,
+            execution_cfg.get("consistency_type", "centered_mse"),
+            temperature=execution_cfg.get("consistency_temperature", 1.0))
+    g_lm = torch.autograd.grad(lm_loss, params, retain_graph=True, allow_unused=True)
+    g_con = torch.autograd.grad(con_loss, params, allow_unused=True)
+    norm_lm = sum(g.detach().float().norm() ** 2 for g in g_lm if g is not None) ** 0.5
+    norm_con = sum(g.detach().float().norm() ** 2 for g in g_con if g is not None) ** 0.5
+    model.zero_grad(set_to_none=True)
+    cw = float(rho * norm_lm / max(norm_con, 1e-12))
+    return cw
+
+
 def consistency_weight(step, total, config):
     start_weight = config.get("consistency_weight", 0.1)
     end_weight = config.get("consistency_weight_end", start_weight)
@@ -64,31 +87,31 @@ def consistency_weight(step, total, config):
 
 
 def _compute_consistency(sequential_logits, parallel_logits, consistency_type,
-                         teacher_detach=False):
+                         teacher_detach=False, temperature=1.0):
     if consistency_type == "raw_mse":
         target = sequential_logits.detach() if teacher_detach else sequential_logits
         return F.mse_loss(parallel_logits, target)
     if consistency_type == "kl_forward":
         seq_logprob = F.log_softmax(
-            sequential_logits.detach() if teacher_detach else sequential_logits,
+            (sequential_logits.detach() if teacher_detach else sequential_logits) / temperature,
             dim=-1)
-        par_logprob = F.log_softmax(parallel_logits, dim=-1)
-        return F.kl_div(par_logprob, seq_logprob.exp(), reduction="batchmean")
+        par_logprob = F.log_softmax(parallel_logits / temperature, dim=-1)
+        return F.kl_div(par_logprob, seq_logprob.exp(), reduction="batchmean") * (temperature ** 2)
     if consistency_type == "symmetric_kl":
         seq_lp = F.log_softmax(
-            sequential_logits.detach() if teacher_detach else sequential_logits,
+            (sequential_logits.detach() if teacher_detach else sequential_logits) / temperature,
             dim=-1)
-        par_lp = F.log_softmax(parallel_logits, dim=-1)
+        par_lp = F.log_softmax(parallel_logits / temperature, dim=-1)
         return (F.kl_div(par_lp, seq_lp.exp(), reduction="batchmean")
-                + F.kl_div(seq_lp, par_lp.exp(), reduction="batchmean")) / 2
+                + F.kl_div(seq_lp, par_lp.exp(), reduction="batchmean")) / 2 * (temperature ** 2)
     if consistency_type == "jensen_shannon":
         seq_lp = F.log_softmax(
-            sequential_logits.detach() if teacher_detach else sequential_logits,
+            (sequential_logits.detach() if teacher_detach else sequential_logits) / temperature,
             dim=-1)
-        par_lp = F.log_softmax(parallel_logits, dim=-1)
+        par_lp = F.log_softmax(parallel_logits / temperature, dim=-1)
         m = (seq_lp.exp() + par_lp.exp()) / 2
         return (F.kl_div(seq_lp, m, reduction="batchmean")
-                + F.kl_div(par_lp, m, reduction="batchmean")) / 2
+                + F.kl_div(par_lp, m, reduction="batchmean")) / 2 * (temperature ** 2)
     # Default: centered_mse
     seq_centered = sequential_logits - sequential_logits.mean(dim=-1, keepdim=True)
     par_centered = parallel_logits - parallel_logits.mean(dim=-1, keepdim=True)
@@ -98,11 +121,11 @@ def _compute_consistency(sequential_logits, parallel_logits, consistency_type,
 
 def polymorphic_loss(model, inputs, targets, parallel_weight, consistency_weight,
                      teacher_detach=False, memory_efficient=False,
-                     consistency_type="centered_mse"):
+                     consistency_type="centered_mse", temperature=1.0):
     if memory_efficient:
         return _polymorphic_loss_memory_efficient(
             model, inputs, targets, parallel_weight, consistency_weight,
-            consistency_type=consistency_type)
+            consistency_type=consistency_type, temperature=temperature)
     sequential_logits = model(inputs, mode="sequential")
     parallel_logits = model(inputs, mode="parallel")
     sequential_loss = F.cross_entropy(
@@ -110,7 +133,7 @@ def polymorphic_loss(model, inputs, targets, parallel_weight, consistency_weight
     parallel_loss = F.cross_entropy(
         parallel_logits.view(-1, parallel_logits.size(-1)), targets.reshape(-1))
     consistency = _compute_consistency(
-        sequential_logits, parallel_logits, consistency_type, teacher_detach)
+        sequential_logits, parallel_logits, consistency_type, teacher_detach, temperature)
     total = (
         (1 - parallel_weight) * sequential_loss
         + parallel_weight * parallel_loss
@@ -125,7 +148,8 @@ def polymorphic_loss(model, inputs, targets, parallel_weight, consistency_weight
 
 def _polymorphic_loss_memory_efficient(model, inputs, targets, parallel_weight,
                                        consistency_weight,
-                                       consistency_type="centered_mse"):
+                                       consistency_type="centered_mse",
+                                       temperature=1.0):
     """Backward each graph separately with gradient checkpointing.
 
     Uses teacher_detach semantics for the consistency term and recomputes
@@ -148,7 +172,7 @@ def _polymorphic_loss_memory_efficient(model, inputs, targets, parallel_weight,
         parallel_logits.view(-1, parallel_logits.size(-1)), targets.reshape(-1))
     consistency = _compute_consistency(
         sequential_logits_detached, parallel_logits, consistency_type,
-        teacher_detach=True)
+        teacher_detach=True, temperature=temperature)
     (parallel_weight * parallel_loss + consistency_weight * consistency).backward()
     parallel_loss_val = parallel_loss.detach()
     consistency_val = consistency.detach()
@@ -374,8 +398,13 @@ def main():
                         device=loss.device)
                 }
             elif execution_cfg.get("enabled", False):
-                current_consistency_weight = consistency_weight(
-                    step, total, execution_cfg)
+                gradnorm_rho = execution_cfg.get("gradnorm_rho")
+                if gradnorm_rho is not None:
+                    current_consistency_weight = _gradnorm_cw(
+                        model, x, y, execution_cfg, gradnorm_rho)
+                else:
+                    current_consistency_weight = consistency_weight(
+                        step, total, execution_cfg)
                 mem_efficient = execution_cfg.get("memory_efficient", False)
                 loss, execution_metrics = polymorphic_loss(
                     model, x, y,
@@ -384,7 +413,9 @@ def main():
                     execution_cfg.get("teacher_detach", False),
                     memory_efficient=mem_efficient,
                     consistency_type=execution_cfg.get(
-                        "consistency_type", "centered_mse"))
+                        "consistency_type", "centered_mse"),
+                    temperature=execution_cfg.get(
+                        "consistency_temperature", 1.0))
                 execution_metrics["consistency_weight"] = torch.tensor(
                     current_consistency_weight, device=loss.device)
             else:

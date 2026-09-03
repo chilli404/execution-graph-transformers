@@ -7,7 +7,7 @@ __pycache__/
 env/
 *.egg-info/
 checkpoints/
-data/raw/
+data/
 wandb/
 runs/
 *.log
