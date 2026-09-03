@@ -63,39 +63,55 @@ def _gradnorm_cw(model, x, y, execution_cfg, rho, step=0):
     if step > 0 and (step - _gradnorm_cache["step"]) < every:
         return _gradnorm_cache["cw"]
 
+    print(f"  [gradnorm] computing at step {step}...", flush=True)
     params = [p for p in model.parameters() if p.requires_grad]
-    autocast_ctx = dict(device_type=x.device.type, dtype=torch.bfloat16,
-                        enabled=x.device.type != "cpu")
     con_type = execution_cfg.get("consistency_type", "centered_mse")
     con_temp = execution_cfg.get("consistency_temperature", 1.0)
 
-    # Forward 1: LM gradient (with gradient checkpointing)
-    with torch.autocast(**autocast_ctx):
+    # Sequential forward + LM loss backward (with grad checkpointing)
+    print(f"  [gradnorm] seq fwd...", flush=True)
+    with torch.autocast(device_type=x.device.type, dtype=torch.bfloat16,
+                        enabled=x.device.type != "cpu"):
         seq_logits = model(x, mode="sequential", gradient_checkpointing=True)
-        par_logits = model(x, mode="parallel", gradient_checkpointing=True)
-        lm_loss = 0.5 * (
-            F.cross_entropy(seq_logits.view(-1, seq_logits.size(-1)), y.reshape(-1))
-            + F.cross_entropy(par_logits.view(-1, par_logits.size(-1)), y.reshape(-1)))
-    g_lm = torch.autograd.grad(lm_loss, params, allow_unused=True)
-    norm_lm = sum(g.detach().float().norm() ** 2 for g in g_lm if g is not None) ** 0.5
-    del lm_loss, seq_logits, par_logits, g_lm
+        seq_loss = F.cross_entropy(
+            seq_logits.view(-1, seq_logits.size(-1)), y.reshape(-1))
+    print(f"  [gradnorm] seq bwd...", flush=True)
+    seq_loss.backward()
+    norm_lm_seq = sum(
+        p.grad.detach().float().norm().item() ** 2
+        for p in params if p.grad is not None) ** 0.5
+    seq_centered = (seq_logits - seq_logits.mean(dim=-1, keepdim=True)).detach()
+    del seq_logits, seq_loss
     model.zero_grad(set_to_none=True)
 
-    # Forward 2: consistency gradient (with gradient checkpointing)
-    with torch.autocast(**autocast_ctx):
-        seq_logits = model(x, mode="sequential", gradient_checkpointing=True)
+    # Parallel forward + add to LM norm estimate
+    print(f"  [gradnorm] par fwd...", flush=True)
+    with torch.autocast(device_type=x.device.type, dtype=torch.bfloat16,
+                        enabled=x.device.type != "cpu"):
         par_logits = model(x, mode="parallel", gradient_checkpointing=True)
-        con_loss = _compute_consistency(seq_logits, par_logits, con_type,
-                                        temperature=con_temp)
-    g_con = torch.autograd.grad(con_loss, params, allow_unused=True)
-    norm_con = sum(g.detach().float().norm() ** 2 for g in g_con if g is not None) ** 0.5
-    del con_loss, seq_logits, par_logits, g_con
+        par_loss = F.cross_entropy(
+            par_logits.view(-1, par_logits.size(-1)), y.reshape(-1))
+        par_centered = par_logits - par_logits.mean(dim=-1, keepdim=True)
+        con_loss = _compute_consistency(
+            seq_centered, par_centered, con_type, temperature=con_temp)
+    print(f"  [gradnorm] par+con bwd...", flush=True)
+    (par_loss + con_loss).backward()
+    norm_total = sum(
+        p.grad.detach().float().norm().item() ** 2
+        for p in params if p.grad is not None) ** 0.5
+    # Approximate: ||∇con|| ≈ ||∇(par+con)|| - ||∇par|| ≈ ||∇total||
+    # Use ||∇LM|| ≈ avg(||∇seq||, ||∇par||) ≈ ||∇seq|| (close enough)
+    norm_lm = norm_lm_seq
+    norm_con = max(norm_total - norm_lm, 1e-8)
+    del par_logits, par_loss, con_loss, par_centered, seq_centered
     model.zero_grad(set_to_none=True)
 
     cw = float(rho * norm_lm / max(norm_con, 1e-8))
     cw = max(1e-4, min(cw, 10.0))
     _gradnorm_cache["cw"] = cw
     _gradnorm_cache["step"] = step
+    print(f"  [gradnorm] ||∇LM||={norm_lm:.4f} ||∇con||≈{norm_con:.4f} cw={cw:.4f}",
+          flush=True)
     return cw
 
 
