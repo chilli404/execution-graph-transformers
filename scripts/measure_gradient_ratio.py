@@ -36,8 +36,8 @@ from fogen.data import ShardedLoader, load_tokenizer
 from fogen.model import GPT, ModelConfig
 
 
-def grad_norm(params, loss):
-    grads = torch.autograd.grad(loss, params, retain_graph=True, allow_unused=True)
+def grad_norm_of(params, loss):
+    grads = torch.autograd.grad(loss, params, allow_unused=True)
     total = 0.0
     for g in grads:
         if g is not None:
@@ -45,9 +45,7 @@ def grad_norm(params, loss):
     return total ** 0.5
 
 
-def measure_ratios(model, batch_x, batch_y, device):
-    params = [p for p in model.parameters() if p.requires_grad]
-
+def _forward_and_losses(model, batch_x, batch_y, device):
     with torch.autocast(device_type=device.type, dtype=torch.bfloat16,
                         enabled=device.type == "cuda"):
         seq_logits = model(batch_x, mode="sequential")
@@ -61,25 +59,43 @@ def measure_ratios(model, batch_x, batch_y, device):
 
         seq_centered = seq_logits - seq_logits.mean(dim=-1, keepdim=True)
         par_centered = par_logits - par_logits.mean(dim=-1, keepdim=True)
-        mse_consistency = F.mse_loss(par_centered, seq_centered)
+        mse_con = F.mse_loss(par_centered, seq_centered)
 
         seq_lp = F.log_softmax(seq_logits, dim=-1)
         par_lp = F.log_softmax(par_logits, dim=-1)
-        kl_consistency = (
+        kl_con = (
             F.kl_div(par_lp, seq_lp.exp(), reduction="batchmean")
             + F.kl_div(seq_lp, par_lp.exp(), reduction="batchmean")
         ) / 2
 
-    g_lm = grad_norm(params, lm_loss)
-    g_mse = grad_norm(params, mse_consistency)
-    g_kl = grad_norm(params, kl_consistency)
+    return lm_loss, mse_con, kl_con
 
-    model.zero_grad()
+
+def measure_ratios(model, batch_x, batch_y, device):
+    params = [p for p in model.parameters() if p.requires_grad]
+
+    # Compute each gradient separately to avoid retain_graph OOM
+    lm_loss, mse_con, kl_con = _forward_and_losses(model, batch_x, batch_y, device)
+    lm_val, mse_val, kl_val = float(lm_loss), float(mse_con), float(kl_con)
+
+    g_lm = grad_norm_of(params, lm_loss)
+    del lm_loss, mse_con, kl_con
+    model.zero_grad(set_to_none=True)
+
+    _, mse_con, _ = _forward_and_losses(model, batch_x, batch_y, device)
+    g_mse = grad_norm_of(params, mse_con)
+    del mse_con
+    model.zero_grad(set_to_none=True)
+
+    _, _, kl_con = _forward_and_losses(model, batch_x, batch_y, device)
+    g_kl = grad_norm_of(params, kl_con)
+    del kl_con
+    model.zero_grad(set_to_none=True)
 
     return {
-        "lm_loss": float(lm_loss),
-        "mse_consistency": float(mse_consistency),
-        "kl_consistency": float(kl_consistency),
+        "lm_loss": lm_val,
+        "mse_consistency": mse_val,
+        "kl_consistency": kl_val,
         "grad_norm_lm": g_lm,
         "grad_norm_mse": g_mse,
         "grad_norm_kl": g_kl,
