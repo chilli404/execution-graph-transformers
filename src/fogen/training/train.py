@@ -49,22 +49,30 @@ def random_execution_mask(n_layers, parallel_probability, generator):
     return ["parallel" if value else "sequential" for value in parallel.tolist()]
 
 
-def _gradnorm_cw(model, x, y, execution_cfg, rho):
+_gradnorm_cache = {"cw": 0.1, "step": -1}
+
+
+def _gradnorm_cw(model, x, y, execution_cfg, rho, step=0):
     """Compute gradient-normalized consistency weight: cw = ρ * ||∇LM|| / ||∇con||.
 
-    Uses separate forward passes to avoid retain_graph OOM at large scale.
+    Only recomputes every gradnorm_every steps (default 100) to amortize cost.
+    Uses gradient checkpointing to fit in memory at 3B+ scale.
     Clamps output to [1e-4, 10.0] to handle early training where con≈0.
     """
+    every = execution_cfg.get("gradnorm_every", 100)
+    if step > 0 and (step - _gradnorm_cache["step"]) < every:
+        return _gradnorm_cache["cw"]
+
     params = [p for p in model.parameters() if p.requires_grad]
     autocast_ctx = dict(device_type=x.device.type, dtype=torch.bfloat16,
                         enabled=x.device.type != "cpu")
     con_type = execution_cfg.get("consistency_type", "centered_mse")
     con_temp = execution_cfg.get("consistency_temperature", 1.0)
 
-    # Forward 1: LM gradient
+    # Forward 1: LM gradient (with gradient checkpointing)
     with torch.autocast(**autocast_ctx):
-        seq_logits = model(x, mode="sequential")
-        par_logits = model(x, mode="parallel")
+        seq_logits = model(x, mode="sequential", gradient_checkpointing=True)
+        par_logits = model(x, mode="parallel", gradient_checkpointing=True)
         lm_loss = 0.5 * (
             F.cross_entropy(seq_logits.view(-1, seq_logits.size(-1)), y.reshape(-1))
             + F.cross_entropy(par_logits.view(-1, par_logits.size(-1)), y.reshape(-1)))
@@ -73,10 +81,10 @@ def _gradnorm_cw(model, x, y, execution_cfg, rho):
     del lm_loss, seq_logits, par_logits, g_lm
     model.zero_grad(set_to_none=True)
 
-    # Forward 2: consistency gradient
+    # Forward 2: consistency gradient (with gradient checkpointing)
     with torch.autocast(**autocast_ctx):
-        seq_logits = model(x, mode="sequential")
-        par_logits = model(x, mode="parallel")
+        seq_logits = model(x, mode="sequential", gradient_checkpointing=True)
+        par_logits = model(x, mode="parallel", gradient_checkpointing=True)
         con_loss = _compute_consistency(seq_logits, par_logits, con_type,
                                         temperature=con_temp)
     g_con = torch.autograd.grad(con_loss, params, allow_unused=True)
@@ -85,7 +93,10 @@ def _gradnorm_cw(model, x, y, execution_cfg, rho):
     model.zero_grad(set_to_none=True)
 
     cw = float(rho * norm_lm / max(norm_con, 1e-8))
-    return max(1e-4, min(cw, 10.0))
+    cw = max(1e-4, min(cw, 10.0))
+    _gradnorm_cache["cw"] = cw
+    _gradnorm_cache["step"] = step
+    return cw
 
 
 def consistency_weight(step, total, config):
@@ -417,7 +428,7 @@ def main():
                 gradnorm_rho = execution_cfg.get("gradnorm_rho")
                 if gradnorm_rho is not None:
                     current_consistency_weight = _gradnorm_cw(
-                        model, x, y, execution_cfg, gradnorm_rho)
+                        model, x, y, execution_cfg, gradnorm_rho, step=step)
                 else:
                     current_consistency_weight = consistency_weight(
                         step, total, execution_cfg)
