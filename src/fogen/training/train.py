@@ -60,7 +60,7 @@ def _gradnorm_cw(model, x, y, execution_cfg, rho, step=0):
     Clamps output to [1e-4, 10.0] to handle early training where con≈0.
     """
     every = execution_cfg.get("gradnorm_every", 100)
-    if step > 0 and (step - _gradnorm_cache["step"]) < every:
+    if (step - _gradnorm_cache["step"]) < every:
         return _gradnorm_cache["cw"]
 
     print(f"  [gradnorm] computing at step {step}...", flush=True)
