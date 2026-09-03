@@ -97,14 +97,20 @@ def main():
     parser.add_argument("--tokenizer_dir", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--n_batches", type=int, default=4)
+    parser.add_argument("--bf16", action="store_true",
+                        help="Load model in bf16 (needed for 7B on 96GB)")
+    parser.add_argument("--batch_seqs", type=int, default=None,
+                        help="Override batch size (default: min(config, 8))")
     args = parser.parse_args()
 
     cfg = yaml.safe_load(open(args.config))
     mcfg = ModelConfig(**cfg["model"])
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    param_dtype = torch.bfloat16 if args.bf16 else torch.float32
 
+    batch = args.batch_seqs or min(cfg.get("batch_seqs", 8), 8)
     loader = ShardedLoader(
-        args.val_shards, min(cfg.get("batch_seqs", 8), 8),
+        args.val_shards, batch,
         mcfg.ctx_len, seed=999, device=device)
 
     if args.ckpt_dir:
@@ -119,10 +125,10 @@ def main():
         step = int(ckpt_path.stem.replace("step", ""))
         print(f"\n=== {ckpt_path.name} (step {step}) ===")
 
-        model = GPT(mcfg).to(device)
+        model = GPT(mcfg).to(device=device, dtype=param_dtype)
         state = load_file(str(ckpt_path))
         missing, unexpected = model.load_state_dict(
-            {k: v.float() for k, v in state.items()}, strict=False)
+            {k: v.to(param_dtype) for k, v in state.items()}, strict=False)
         assert not unexpected
         model.train()
 
