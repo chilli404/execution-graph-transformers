@@ -2,7 +2,7 @@
 
 Research code and collaborator materials for **execution-graph equivalent Transformers**: training one checkpoint that can run under sequential, parallel, and mixed Attention–FFN execution DAGs while preserving quality.
 
-> **Status:** preprint-stage research repository. Results are verified against the packaged artifacts but are not yet peer reviewed. Large checkpoints and training corpora are not included.
+> **Status:** ICLR 2027 submission in progress. All experiments complete (120M–7B primary architecture + Llama 430M/1B). See `docs/EXPERIMENT_STATUS.md` for the full results inventory.
 
 ## Core idea
 
@@ -22,59 +22,89 @@ x -> Norm(x)                 + -> output
 
 Ordinary Transformer weights specialize to the graph used during training. Changing only the execution dependency can substantially degrade quality. We train with a graph-consistency objective so the same weights implement approximately equivalent functions across execution DAGs.
 
-## Verified headline results
+## Headline results
 
-Experiments use 117.5M-parameter decoder-only Transformers trained on ClimbMix and TinyStories.
+| Scale | Agreement | Sym KL | ΔBPB | Architecture |
+|-------|-----------|--------|------|--------------|
+| 120M | 95.4% | 5.86 | 0.0014 | Primary |
+| 430M | 96.5% | 4.68 | 0.0016 | Primary |
+| 1B | 96.1% | 4.10 | 0.0012 | Primary |
+| 3B (gradnorm) | 98.3% | 0.92 | 0.0012 | Primary |
+| 7B | 95.6% | 3.78 | 0.0017 | Primary |
+| 430M | 93.6% | 10.4 | 0.003 | Llama |
+| 1B | 91.2% | 26.1 | 0.002 | Llama |
 
-- **Graph specialization:** sequential specialists degrade by roughly 35–38% BPB when switched to parallel; parallel specialists degrade by roughly 11–14% when switched to sequential.
-- **Near-specialist quality:** the graph-consistent model is within 0.1% of the sequential specialist on ClimbMix and slightly outperforms both specialists on TinyStories.
-- **Cross-graph agreement:** 90.5% on ClimbMix and 94.8% on TinyStories.
-- **Mixed-DAG generalization:** more than 50 sampled 12-layer DAGs remain within 0.002 BPB of the reference graph.
-- **Composition law:** sums of single-layer effects predict multi-layer graph KL with Pearson 0.96–0.97 and approximately 11% relative RMSE.
-- **Serving:** fused parallel execution improves mean KV-cache TPOT by about 24–26%; fixed-shape `torch.compile` speedups reach 1.45–1.54x.
-- **Necessary consistency:** joint CE and random-mask baselines preserve average BPB but have much worse agreement and 6x+ larger KL divergence.
+- **Specialist collapse:** 430M specialist gets 54% agreement (KL=1273) under graph switch. Polymorphic model: 96.5% (KL=4.68).
+- **Composition law:** single-layer defects predict 10k+ held-out mixed DAGs with Pearson 0.97 (primary) and 0.85 (Llama). Calibrated compiler reduces budget violations from 33–47% to <1%.
+- **Hardware compilation:** L40S 1.20–1.54×, Apple M4 1.14×, 7B TP=2 1.20× from communication overlap.
+- **Downstream parity:** 7B lm-eval (HellaSwag, PIQA, WinoGrande, ARC) — all execution graphs within 1 stderr.
+- **Loss analysis:** MSE and KL both achieve graph consistency. KL gradients are 10–58× larger than LM gradients; gradient-normalized weighting resolves scale sensitivity.
 
-These are exploratory but verified single-seed research results, not final publication claims. See the claim boundaries in `docs/COLLABORATOR_BRIEF.md`.
+See `docs/EXPERIMENT_STATUS.md` for complete results with interpretation.
 
 ## Repository map
 
 ```text
-docs/
-  COLLABORATOR_BRIEF.md   Current state, verified results, limitations
-  LITERATURE_REVIEW.md    Verified references and novelty-gap analysis
-  MESSAGE_TO_COLLABORATOR.md
-paper/
-  LAYMAN_GUIDE_EN.md      English non-technical guide
-  LAYMAN_GUIDE_CN.md      Chinese non-technical guide
-  THEORY_GUIDE_EN.md      English progressive theory guide
-  THEORY_GUIDE_CN.md      Chinese progressive theory guide
-  theory.tex              Formal theorem/proof section
-notebooks/
-  01_results_overview.ipynb
-  02_composition_and_compiler.ipynb
-  03_serving_analysis.ipynb
-blackwell/
-  README.md               RTX PRO 6000 Blackwell work plan
 src/fogen/
-  model.py                Sequential/parallel/fused model and KV cache
-  execution_graph.py      Defect-budget graph compiler
-  hf_model.py             Hugging Face model interface
-scripts/
-  Analysis, evaluation, export, and plotting tools
-configs/
-  Successful 120M training and ablation configurations
-results/
-  Verified JSON artifacts and generated figures
+  model.py                Transformer with 4 execution modes (seq/par/fused/cuda)
+                          Supports both primary (ReLU², QK-norm, value embeddings)
+                          and Llama-style (RMSNorm, SwiGLU) architectures
+  training/train.py       Config-driven training with polymorphic loss,
+                          multiple consistency objectives, gradient-normalized cw
+  execution_graph.py      Defect-budget graph compiler (greedy + DP)
+  hf_model.py             Hugging Face AutoModel interface
+  evals/                  BPB evaluation and forced-choice scoring
+
+configs/                  120M training and ablation configs
+  pareto/                 430M and 1B loss-objective sweep configs
+                          Naming: {scale}_{objective}_{temperature}_cw{weight}
+
+blackwell/                Scale-up experiments (430M–7B)
+  configs/                Training configs for 430M, 1B, 3B, 7B, Llama variants
+  vllm_plugin/            Native vLLM out-of-tree plugin with PagedAttention + TP
+  results/organized/      All experiment results (see below)
+
+scripts/                  Evaluation, analysis, and export tools
+  eval_graph_rewrites.py        Full graph-rewrite sweep (agreement, KL, BPB)
+  eval_composition_holdout.py   10k+ mask holdout composition test
+  eval_pairwise_mechanism.py    C(L,2) pairwise interaction analysis
+  measure_gradient_ratio.py     ||∇consistency|| / ||∇LM|| measurement
+  eval_compiler_calibration.py  Calibrated compiler violation rates
+  export_hf_checkpoint.py       Export to HuggingFace format
+
+docs/
+  EXPERIMENT_STATUS.md    Complete results inventory with interpretation
+
+paper/                    Theory and exposition
+  theory.tex              Formal theorems and proofs
+  LAYMAN_GUIDE_{EN,CN}.md
+  THEORY_GUIDE_{EN,CN}.md
+
+results/                  Original 120M figures and JSON artifacts
+```
+
+### Results structure
+
+All scale-up results live in `blackwell/results/organized/`:
+
+```text
+organized/
+  scale_series/       120M–7B primary architecture graph rewrites and composition
+  llama/              Llama 430M + 1B (specialist collapse, composition, calibration)
+  pareto_430m/        12 loss-objective configs (MSE × 5λ, KL T=1 × 4λ, KL T=4 × 3λ)
+  pareto_1b/          12 loss-objective configs (MSE × 2, KL × 10)
+  ablation_120m/      6 objectives × 3 seeds
+  gradient_analysis/  ||∇MSE||/||∇LM|| and ||∇KL||/||∇LM|| at 120M–7B
+  mechanism/          Full pairwise interaction + defect cosine (430M, 7B)
+  serving/            vLLM, TP=2, hardware profiles
+  downstream/         7B lm-eval (seq/par/compiled)
 ```
 
 ## Suggested reading order
 
-1. `paper/LAYMAN_GUIDE_EN.md` or `paper/LAYMAN_GUIDE_CN.md`
-2. `docs/COLLABORATOR_BRIEF.md`
-3. `paper/THEORY_GUIDE_EN.md` or `paper/THEORY_GUIDE_CN.md`
-4. `docs/LITERATURE_REVIEW.md`
-5. `blackwell/README.md`
-6. `paper/theory.tex`
+1. This README
+2. `docs/EXPERIMENT_STATUS.md` — all experiments and results with interpretation
+3. `paper/theory.tex` — formal theorems and proofs
 
 ## Main research question
 
@@ -106,7 +136,7 @@ This connects Attention updates, FFN steering, execution-graph divergence, and d
 
 ## Current status
 
-The method, theory probes, cross-corpus results, aggregate graph compiler, prompt-level ranker, HF export, and PyTorch/KV-cache benchmarks are implemented. A native vLLM out-of-tree plugin and larger-model Blackwell validation are the primary next work packages.
+All experiments complete through 7B (primary architecture) and 1B (Llama). Results include: scale series 120M–7B, second architecture validation, loss-objective Pareto sweeps at 430M and 1B, gradient ratio analysis, gradient-normalized training at 3B, pairwise mechanism analysis, compiler calibration, vLLM serving, TP=2 communication overlap, and downstream benchmarks. Paper writing in progress for ICLR 2027 (deadline Sep 25).
 
 ## Quick start
 
@@ -124,4 +154,4 @@ pytest -q
 python scripts/make_execution_paper_figures.py
 ```
 
-Large training data and checkpoints are intentionally not committed. See `docs/COLLABORATOR_BRIEF.md` and `blackwell/README.md` for artifact and replication guidance.
+Large training data and checkpoints are intentionally not committed. See `docs/EXPERIMENT_STATUS.md` for the full results inventory.
