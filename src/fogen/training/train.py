@@ -24,6 +24,7 @@ from fogen.evals.scoring import aggregate, fogen_scorer, load_battery
 from fogen.model import GPT, ModelConfig
 from fogen.training.margin_guard import forced_choice_margin, project_gradient_
 from fogen.training.muon import Muon
+from fogen.training.tracking import MLflowTracker, NoopTracker
 
 
 def active_loader(step, loader_a, loader_b=None, switch_step=None):
@@ -369,49 +370,8 @@ def main():
         except Exception as e:
             print(f"wandb disabled: {e}")
 
-    mlflow_run = None
-    if args.mlflow:
-        try:
-            import mlflow
-
-            def _flatten_params(d, prefix=""):
-                out = {}
-                for k, v in d.items():
-                    key = f"{prefix}{k}" if prefix else k
-                    if isinstance(v, dict):
-                        out.update(_flatten_params(v, key + "."))
-                    elif isinstance(v, list):
-                        out[key] = str(v)
-                    else:
-                        out[key] = v
-                return out
-
-            mlflow.set_experiment(cfg.get("wandb_project", "fogen-phase"))
-            mlflow_run = mlflow.start_run(
-                run_name=out.name, log_system_metrics=True)
-            mlflow.log_params(_flatten_params({**cfg, "seed": args.seed}))
-
-            shard_dir = Path(cfg["data"]["shard_dir"])
-            manifest_path = shard_dir / "manifest.json"
-            if manifest_path.exists():
-                manifest = json.loads(manifest_path.read_text())
-                import numpy as np
-                dataset = mlflow.data.from_numpy(
-                    features=np.empty(0),
-                    source=str(shard_dir),
-                    name=shard_dir.parent.name,
-                )
-                mlflow.log_input(dataset, context="training")
-                mlflow.set_tags({
-                    "dataset.total_tokens": manifest.get("total_tokens"),
-                    "dataset.n_shards": len(manifest.get("shards", [])),
-                    "dataset.max_tokens": cfg["data"].get("max_tokens", "all"),
-                    "dataset.tokenizer": cfg["data"]["tokenizer_dir"],
-                    "dataset.shard_dir": str(shard_dir),
-                })
-        except Exception as e:
-            print(f"mlflow disabled: {e}")
-            mlflow_run = None
+    tracker = (MLflowTracker({**cfg, "seed": args.seed}, out, out.name)
+               if args.mlflow else NoopTracker())
 
     probe_log = (out / "probe_log.jsonl").open("a")
     train_log = (out / "train_log.jsonl").open("a")
@@ -426,14 +386,7 @@ def main():
         if wandb_run:
             wandb_run.log({f"probe/{a['probe']}/{a['split']}/acc": a["argmax_acc"]
                            for a in aggs} | {"step": step}, step=step)
-        if mlflow_run:
-            import mlflow
-            probe_metrics = {}
-            for a in aggs:
-                prefix = f"probe/{a['probe']}/{a['split']}"
-                probe_metrics[f"{prefix}/acc"] = a["argmax_acc"]
-                probe_metrics[f"{prefix}/logprob_diff"] = a["logprob_diff"]
-            mlflow.log_metrics(probe_metrics, step=step)
+        tracker.log_probes(step, aggs)
         model.train()
 
     model.train()
@@ -453,15 +406,7 @@ def main():
 
         if step in ckpt_at:
             save_checkpoint(model, out / "ckpts", step, muon, adamw)
-            if mlflow_run:
-                import mlflow
-                mlflow.log_metrics({"train/step": step}, step=step)
-                mlflow.log_artifact(str(out / "config_used.yaml"))
-                mlflow.log_artifact(str(out / "train_log.jsonl"))
-                mlflow.log_artifact(str(out / "probe_log.jsonl"))
-                ckpt_path = out / "ckpts" / f"step{step:06d}.safetensors"
-                if ckpt_path.exists():
-                    mlflow.log_artifact(str(ckpt_path), artifact_path="ckpts")
+            tracker.log_checkpoint(step)
         pe = cfg["probes"]["every"]
         if step <= cfg["probes"].get("dense_until", 50) or step % pe == 0:
             run_probes(step)
@@ -544,32 +489,14 @@ def main():
             train_log.write(json.dumps(rec) + "\n"); train_log.flush()
             if wandb_run:
                 wandb_run.log({"train/loss": rec["loss"]}, step=step)
-            if mlflow_run:
-                import mlflow
-                metrics = {
-                    "train/loss": rec["loss"],
-                    "train/tok_s": rec["tok_s"],
-                    "train/step": step,
-                    "lr/muon": muon.param_groups[0]["lr"],
-                    "lr/adamw": adamw.param_groups[0]["lr"],
-                }
-                if execution_metrics is not None:
-                    metrics.update({f"execution/{k}": v.item()
-                                    for k, v in execution_metrics.items()})
-                if guard_record is not None:
-                    for k, v in guard_record.items():
-                        metrics[f"guard/{k}"] = float(v)
-                mlflow.log_metrics(metrics, step=step)
+            tracker.log_step(step, rec, execution_metrics, guard_record,
+                             muon_lr=muon.param_groups[0]["lr"],
+                             adamw_lr=adamw.param_groups[0]["lr"])
             print(rec)
 
     if wandb_run:
         wandb_run.finish()
-    if mlflow_run:
-        import mlflow
-        mlflow.log_artifact(str(out / "train_log.jsonl"))
-        mlflow.log_artifact(str(out / "probe_log.jsonl"))
-        mlflow.log_artifact(str(out / "config_used.yaml"))
-        mlflow.end_run()
+    tracker.finish()
     print(f"done in {(time.time()-t0)/60:.1f} min -> {out}")
 
 
