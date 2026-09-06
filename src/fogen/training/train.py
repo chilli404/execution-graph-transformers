@@ -390,6 +390,25 @@ def main():
             mlflow_run = mlflow.start_run(
                 run_name=out.name, log_system_metrics=True)
             mlflow.log_params(_flatten_params({**cfg, "seed": args.seed}))
+
+            shard_dir = Path(cfg["data"]["shard_dir"])
+            manifest_path = shard_dir / "manifest.json"
+            if manifest_path.exists():
+                manifest = json.loads(manifest_path.read_text())
+                import numpy as np
+                dataset = mlflow.data.from_numpy(
+                    features=np.empty(0),
+                    source=str(shard_dir),
+                    name=shard_dir.parent.name,
+                )
+                mlflow.log_input(dataset, context="training")
+                mlflow.set_tags({
+                    "dataset.total_tokens": manifest.get("total_tokens"),
+                    "dataset.n_shards": len(manifest.get("shards", [])),
+                    "dataset.max_tokens": cfg["data"].get("max_tokens", "all"),
+                    "dataset.tokenizer": cfg["data"]["tokenizer_dir"],
+                    "dataset.shard_dir": str(shard_dir),
+                })
         except Exception as e:
             print(f"mlflow disabled: {e}")
             mlflow_run = None
