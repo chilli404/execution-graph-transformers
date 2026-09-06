@@ -34,7 +34,7 @@ class MLflowTracker:
             mlflow.set_experiment(cfg.get("wandb_project", "fogen-phase"))
             self._run = mlflow.start_run(
                 run_name=run_name, log_system_metrics=True)
-            mlflow.log_params(_flatten({**cfg}))
+            mlflow.log_params(_flatten(cfg))
             self._log_dataset(cfg)
             self._active = True
         except Exception as e:
@@ -144,8 +144,12 @@ class WandbTracker:
     def log_probes(self, step, aggs):
         if not self._run:
             return
-        self._run.log({f"probe/{a['probe']}/{a['split']}/acc": a["argmax_acc"]
-                       for a in aggs} | {"step": step}, step=step)
+        probe_metrics = {}
+        for a in aggs:
+            prefix = f"probe/{a['probe']}/{a['split']}"
+            probe_metrics[f"{prefix}/acc"] = a["argmax_acc"]
+            probe_metrics[f"{prefix}/logprob_diff"] = a["logprob_diff"]
+        self._run.log(probe_metrics | {"step": step}, step=step)
 
     def log_checkpoint(self, step):
         pass
