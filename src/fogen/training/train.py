@@ -24,7 +24,7 @@ from fogen.evals.scoring import aggregate, fogen_scorer, load_battery
 from fogen.model import GPT, ModelConfig
 from fogen.training.margin_guard import forced_choice_margin, project_gradient_
 from fogen.training.muon import Muon
-from fogen.training.tracking import MLflowTracker, NoopTracker
+from fogen.training.tracking import create_tracker
 
 
 def active_loader(step, loader_a, loader_b=None, switch_step=None):
@@ -361,17 +361,9 @@ def main():
     total = t["steps"]
     ckpt_at = checkpoint_steps(cfg.get("checkpointing", {}), total)
 
-    wandb_run = None
-    if not args.no_wandb:
-        try:
-            import wandb
-            wandb_run = wandb.init(project=cfg.get("wandb_project", "fogen-phase"),
-                                   name=out.name, config={**cfg, "seed": args.seed})
-        except Exception as e:
-            print(f"wandb disabled: {e}")
-
-    tracker = (MLflowTracker({**cfg, "seed": args.seed}, out, out.name)
-               if args.mlflow else NoopTracker())
+    tracker = create_tracker(
+        {**cfg, "seed": args.seed}, out,
+        use_mlflow=args.mlflow, use_wandb=not args.no_wandb)
 
     probe_log = (out / "probe_log.jsonl").open("a")
     train_log = (out / "train_log.jsonl").open("a")
@@ -383,9 +375,6 @@ def main():
         for a in aggs:
             probe_log.write(json.dumps({"step": step, **a}) + "\n")
         probe_log.flush()
-        if wandb_run:
-            wandb_run.log({f"probe/{a['probe']}/{a['split']}/acc": a["argmax_acc"]
-                           for a in aggs} | {"step": step}, step=step)
         tracker.log_probes(step, aggs)
         model.train()
 
@@ -487,15 +476,11 @@ def main():
                 rec.update({f"execution_{key}": value.item()
                             for key, value in execution_metrics.items()})
             train_log.write(json.dumps(rec) + "\n"); train_log.flush()
-            if wandb_run:
-                wandb_run.log({"train/loss": rec["loss"]}, step=step)
             tracker.log_step(step, rec, execution_metrics, guard_record,
                              muon_lr=muon.param_groups[0]["lr"],
                              adamw_lr=adamw.param_groups[0]["lr"])
             print(rec)
 
-    if wandb_run:
-        wandb_run.finish()
     tracker.finish()
     print(f"done in {(time.time()-t0)/60:.1f} min -> {out}")
 
