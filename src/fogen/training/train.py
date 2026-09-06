@@ -373,12 +373,23 @@ def main():
     if args.mlflow:
         try:
             import mlflow
+
+            def _flatten_params(d, prefix=""):
+                out = {}
+                for k, v in d.items():
+                    key = f"{prefix}{k}" if prefix else k
+                    if isinstance(v, dict):
+                        out.update(_flatten_params(v, key + "."))
+                    elif isinstance(v, list):
+                        out[key] = str(v)
+                    else:
+                        out[key] = v
+                return out
+
             mlflow.set_experiment(cfg.get("wandb_project", "fogen-phase"))
-            mlflow_run = mlflow.start_run(run_name=out.name)
-            mlflow.log_params({k: v for k, v in {**cfg, "seed": args.seed}.items()
-                               if not isinstance(v, dict)})
-            mlflow.log_params({f"model.{k}": v for k, v in cfg.get("model", {}).items()})
-            mlflow.log_params({f"train.{k}": v for k, v in cfg.get("train", {}).items()})
+            mlflow_run = mlflow.start_run(
+                run_name=out.name, log_system_metrics=True)
+            mlflow.log_params(_flatten_params({**cfg, "seed": args.seed}))
         except Exception as e:
             print(f"mlflow disabled: {e}")
             mlflow_run = None
@@ -398,8 +409,12 @@ def main():
                            for a in aggs} | {"step": step}, step=step)
         if mlflow_run:
             import mlflow
-            mlflow.log_metrics({f"probe/{a['probe']}/{a['split']}/acc": a["argmax_acc"]
-                                for a in aggs}, step=step)
+            probe_metrics = {}
+            for a in aggs:
+                prefix = f"probe/{a['probe']}/{a['split']}"
+                probe_metrics[f"{prefix}/acc"] = a["argmax_acc"]
+                probe_metrics[f"{prefix}/logprob_diff"] = a["logprob_diff"]
+            mlflow.log_metrics(probe_metrics, step=step)
         model.train()
 
     model.train()
@@ -419,6 +434,15 @@ def main():
 
         if step in ckpt_at:
             save_checkpoint(model, out / "ckpts", step, muon, adamw)
+            if mlflow_run:
+                import mlflow
+                mlflow.log_metrics({"train/step": step}, step=step)
+                mlflow.log_artifact(str(out / "config_used.yaml"))
+                mlflow.log_artifact(str(out / "train_log.jsonl"))
+                mlflow.log_artifact(str(out / "probe_log.jsonl"))
+                ckpt_path = out / "ckpts" / f"step{step:06d}.safetensors"
+                if ckpt_path.exists():
+                    mlflow.log_artifact(str(ckpt_path), artifact_path="ckpts")
         pe = cfg["probes"]["every"]
         if step <= cfg["probes"].get("dense_until", 50) or step % pe == 0:
             run_probes(step)
@@ -503,10 +527,19 @@ def main():
                 wandb_run.log({"train/loss": rec["loss"]}, step=step)
             if mlflow_run:
                 import mlflow
-                metrics = {"train/loss": rec["loss"]}
+                metrics = {
+                    "train/loss": rec["loss"],
+                    "train/tok_s": rec["tok_s"],
+                    "train/step": step,
+                    "lr/muon": muon.param_groups[0]["lr"],
+                    "lr/adamw": adamw.param_groups[0]["lr"],
+                }
                 if execution_metrics is not None:
                     metrics.update({f"execution/{k}": v.item()
                                     for k, v in execution_metrics.items()})
+                if guard_record is not None:
+                    for k, v in guard_record.items():
+                        metrics[f"guard/{k}"] = float(v)
                 mlflow.log_metrics(metrics, step=step)
             print(rec)
 
