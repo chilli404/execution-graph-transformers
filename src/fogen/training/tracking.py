@@ -31,7 +31,8 @@ class MLflowTracker:
             import mlflow
             self._mlflow = mlflow
 
-            mlflow.set_experiment(cfg.get("wandb_project", "fogen-phase"))
+            experiment = cfg.get("experiment", cfg.get("wandb_project", "fogen-phase"))
+            mlflow.set_experiment(experiment)
             self._run = mlflow.start_run(
                 run_name=run_name, log_system_metrics=True)
             mlflow.log_params(_flatten(cfg))
@@ -79,7 +80,7 @@ class MLflowTracker:
                             for k, v in execution_metrics.items()})
         if guard_record is not None:
             for k, v in guard_record.items():
-                metrics[f"guard/{k}"] = float(v)
+                metrics[f"guard/{k}"] = int(v) if isinstance(v, bool) else float(v)
         self._mlflow.log_metrics(metrics, step=step)
 
     def log_probes(self, step, aggs):
@@ -118,9 +119,9 @@ class WandbTracker:
         self._run = None
         try:
             import wandb
+            project = cfg.get("experiment", cfg.get("wandb_project", "fogen-phase"))
             self._run = wandb.init(
-                project=cfg.get("wandb_project", "fogen-phase"),
-                name=run_name, config={**cfg})
+                project=project, name=run_name, config=cfg)
         except Exception as e:
             print(f"wandb disabled: {e}")
 
@@ -138,7 +139,7 @@ class WandbTracker:
                             for k, v in execution_metrics.items()})
         if guard_record is not None:
             for k, v in guard_record.items():
-                metrics[f"guard/{k}"] = float(v)
+                metrics[f"guard/{k}"] = int(v) if isinstance(v, bool) else float(v)
         self._run.log(metrics, step=step)
 
     def log_probes(self, step, aggs):
