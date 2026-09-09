@@ -45,9 +45,18 @@ def lr_scale(step: int, total: int, warmdown_frac: float) -> float:
     return 0.5 * (1 + math.cos(math.pi * t))
 
 
-def random_execution_mask(n_layers, parallel_probability, generator):
-    parallel = torch.rand(n_layers, generator=generator) < parallel_probability
-    return ["parallel" if value else "sequential" for value in parallel.tolist()]
+def random_execution_mask(n_layers, parallel_probability, generator,
+                          skip_probability=0.0):
+    r = torch.rand(n_layers, generator=generator)
+    modes = []
+    for v in r.tolist():
+        if v < skip_probability:
+            modes.append("skip")
+        elif v < skip_probability + parallel_probability:
+            modes.append("parallel")
+        else:
+            modes.append("sequential")
+    return modes
 
 
 _gradnorm_cache = {"cw": 0.1, "step": -1}
@@ -410,7 +419,8 @@ def main():
                 execution_mask = random_execution_mask(
                     mcfg.n_layer,
                     execution_cfg.get("parallel_probability", 0.5),
-                    execution_generator)
+                    execution_generator,
+                    skip_probability=execution_cfg.get("skip_probability", 0.0))
                 loss = model.loss(x, y, mode=execution_mask)
                 execution_metrics = {
                     "parallel_fraction": torch.tensor(
