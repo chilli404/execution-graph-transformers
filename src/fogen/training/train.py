@@ -94,26 +94,20 @@ def _gradnorm_cw(model, x, y, execution_cfg, rho, step=0):
     del seq_logits, seq_loss
     model.zero_grad(set_to_none=True)
 
-    # Parallel forward + add to LM norm estimate
-    print(f"  [gradnorm] par fwd...", flush=True)
+    # Parallel forward + separate consistency gradient measurement
+    print(f"  [gradnorm] con fwd+bwd...", flush=True)
     with torch.autocast(device_type=x.device.type, dtype=torch.bfloat16,
                         enabled=x.device.type != "cpu"):
         par_logits = model(x, mode="parallel", gradient_checkpointing=True)
-        par_loss = F.cross_entropy(
-            par_logits.view(-1, par_logits.size(-1)), y.reshape(-1))
         par_centered = par_logits - par_logits.mean(dim=-1, keepdim=True)
         con_loss = _compute_consistency(
             seq_centered, par_centered, con_type, temperature=con_temp)
-    print(f"  [gradnorm] par+con bwd...", flush=True)
-    (par_loss + con_loss).backward()
-    norm_total = sum(
+    con_loss.backward()
+    norm_con = sum(
         p.grad.detach().float().norm().item() ** 2
         for p in params if p.grad is not None) ** 0.5
-    # Approximate: ||∇con|| ≈ ||∇(par+con)|| - ||∇par|| ≈ ||∇total||
-    # Use ||∇LM|| ≈ avg(||∇seq||, ||∇par||) ≈ ||∇seq|| (close enough)
     norm_lm = norm_lm_seq
-    norm_con = max(norm_total - norm_lm, 1e-8)
-    del par_logits, par_loss, con_loss, par_centered, seq_centered
+    del par_logits, con_loss, par_centered, seq_centered
     model.zero_grad(set_to_none=True)
 
     cw = float(rho * norm_lm / max(norm_con, 1e-8))
