@@ -1,383 +1,144 @@
 {
-  "alpha0": 1.2639143402752562,
-  "beta": 0.2666957496822544,
-  "n_layers": 20,
-  "hardware_results": {
-    "blackwell": {
-      "n_budgets": 20,
-      "n_same": 5,
-      "frac_same": 0.25,
-      "max_regret_ms": 0.32799999999999985,
-      "results": [
-        {
-          "budget": 0.5434659109067164,
-          "greedy_n_parallel": 3,
-          "ca_n_parallel": 3,
-          "greedy_saving": 0.16299999999999998,
-          "ca_saving": 0.16299999999999998,
-          "same_graph": true,
-          "regret": 0.0
-        },
-        {
-          "budget": 1.0583283528183425,
-          "greedy_n_parallel": 5,
-          "ca_n_parallel": 6,
-          "greedy_saving": 0.283,
-          "ca_saving": 0.33599999999999997,
-          "same_graph": false,
-          "regret": 0.05299999999999999
-        },
-        {
-          "budget": 1.5731907947299684,
-          "greedy_n_parallel": 7,
-          "ca_n_parallel": 9,
-          "greedy_saving": 0.392,
-          "ca_saving": 0.512,
-          "same_graph": false,
-          "regret": 0.12
-        },
-        {
-          "budget": 2.0880532366415947,
-          "greedy_n_parallel": 8,
-          "ca_n_parallel": 11,
-          "greedy_saving": 0.45099999999999996,
-          "ca_saving": 0.626,
-          "same_graph": false,
-          "regret": 0.17500000000000004
-        },
-        {
-          "budget": 2.60291567855322,
-          "greedy_n_parallel": 9,
-          "ca_n_parallel": 13,
-          "greedy_saving": 0.512,
-          "ca_saving": 0.73,
-          "same_graph": false,
-          "regret": 0.21799999999999997
-        },
-        {
-          "budget": 3.1177781204648465,
-          "greedy_n_parallel": 11,
-          "ca_n_parallel": 14,
-          "greedy_saving": 0.626,
-          "ca_saving": 0.7909999999999999,
-          "same_graph": false,
-          "regret": 0.16499999999999992
-        },
-        {
-          "budget": 3.632640562376473,
-          "greedy_n_parallel": 12,
-          "ca_n_parallel": 16,
-          "greedy_saving": 0.6779999999999999,
-          "ca_saving": 0.8999999999999999,
-          "same_graph": false,
-          "regret": 0.22199999999999998
-        },
-        {
-          "budget": 4.147503004288098,
-          "greedy_n_parallel": 13,
-          "ca_n_parallel": 18,
-          "greedy_saving": 0.7389999999999999,
-          "ca_saving": 1.011,
-          "same_graph": false,
-          "regret": 0.272
-        },
-        {
-          "budget": 4.662365446199725,
-          "greedy_n_parallel": 14,
-          "ca_n_parallel": 19,
-          "greedy_saving": 0.7909999999999999,
-          "ca_saving": 1.064,
-          "same_graph": false,
-          "regret": 0.27300000000000013
-        },
-        {
-          "budget": 5.177227888111351,
-          "greedy_n_parallel": 14,
-          "ca_n_parallel": 20,
-          "greedy_saving": 0.7909999999999999,
-          "ca_saving": 1.1189999999999998,
-          "same_graph": false,
-          "regret": 0.32799999999999985
-        },
-        {
-          "budget": 5.692090330022976,
-          "greedy_n_parallel": 15,
-          "ca_n_parallel": 20,
-          "greedy_saving": 0.847,
-          "ca_saving": 1.1189999999999998,
-          "same_graph": false,
-          "regret": 0.2719999999999998
-        },
-        {
-          "budget": 6.206952771934603,
-          "greedy_n_parallel": 16,
-          "ca_n_parallel": 20,
-          "greedy_saving": 0.8999999999999999,
-          "ca_saving": 1.1189999999999998,
-          "same_graph": false,
-          "regret": 0.21899999999999986
-        },
-        {
-          "budget": 6.721815213846229,
-          "greedy_n_parallel": 17,
-          "ca_n_parallel": 20,
-          "greedy_saving": 0.959,
-          "ca_saving": 1.1189999999999998,
-          "same_graph": false,
-          "regret": 0.1599999999999998
-        },
-        {
-          "budget": 7.2366776557578545,
-          "greedy_n_parallel": 18,
-          "ca_n_parallel": 20,
-          "greedy_saving": 1.011,
-          "ca_saving": 1.1189999999999998,
-          "same_graph": false,
-          "regret": 0.10799999999999987
-        },
-        {
-          "budget": 7.751540097669481,
-          "greedy_n_parallel": 18,
-          "ca_n_parallel": 20,
-          "greedy_saving": 1.011,
-          "ca_saving": 1.1189999999999998,
-          "same_graph": false,
-          "regret": 0.10799999999999987
-        },
-        {
-          "budget": 8.266402539581106,
-          "greedy_n_parallel": 19,
-          "ca_n_parallel": 20,
-          "greedy_saving": 1.064,
-          "ca_saving": 1.1189999999999998,
-          "same_graph": false,
-          "regret": 0.054999999999999716
-        },
-        {
-          "budget": 8.781264981492733,
-          "greedy_n_parallel": 20,
-          "ca_n_parallel": 20,
-          "greedy_saving": 1.1189999999999998,
-          "ca_saving": 1.1189999999999998,
-          "same_graph": true,
-          "regret": 0.0
-        },
-        {
-          "budget": 9.296127423404359,
-          "greedy_n_parallel": 20,
-          "ca_n_parallel": 20,
-          "greedy_saving": 1.1189999999999998,
-          "ca_saving": 1.1189999999999998,
-          "same_graph": true,
-          "regret": 0.0
-        },
-        {
-          "budget": 9.810989865315985,
-          "greedy_n_parallel": 20,
-          "ca_n_parallel": 20,
-          "greedy_saving": 1.1189999999999998,
-          "ca_saving": 1.1189999999999998,
-          "same_graph": true,
-          "regret": 0.0
-        },
-        {
-          "budget": 10.32585230722761,
-          "greedy_n_parallel": 20,
-          "ca_n_parallel": 20,
-          "greedy_saving": 1.1189999999999998,
-          "ca_saving": 1.1189999999999998,
-          "same_graph": true,
-          "regret": 0.0
-        }
-      ]
+  "alpha0": 1.269543145120094,
+  "beta": 0.2686473677507297,
+  "n_match": 0,
+  "match_fraction": 0.0,
+  "max_regret": 7.0,
+  "comparisons": [
+    {
+      "budget": 0.5499841705073777,
+      "greedy_k": 3,
+      "dp_k": 3,
+      "match": false,
+      "regret": 0.0,
+      "greedy_saving": 3.0,
+      "dp_saving": 3.0
     },
-    "mps": {
-      "n_budgets": 20,
-      "n_same": 6,
-      "frac_same": 0.3,
-      "max_regret_ms": 0.006000000000000002,
-      "results": [
-        {
-          "budget": 0.5907358987167401,
-          "greedy_n_parallel": 2,
-          "ca_n_parallel": 2,
-          "greedy_saving": 0.004,
-          "ca_saving": 0.004,
-          "same_graph": true,
-          "regret": 0.0
-        },
-        {
-          "budget": 1.1503804343431256,
-          "greedy_n_parallel": 3,
-          "ca_n_parallel": 3,
-          "greedy_saving": 0.006,
-          "ca_saving": 0.006,
-          "same_graph": true,
-          "regret": 0.0
-        },
-        {
-          "budget": 1.710024969969511,
-          "greedy_n_parallel": 4,
-          "ca_n_parallel": 4,
-          "greedy_saving": 0.008,
-          "ca_saving": 0.009000000000000001,
-          "same_graph": false,
-          "regret": 0.0010000000000000009
-        },
-        {
-          "budget": 2.269669505595896,
-          "greedy_n_parallel": 4,
-          "ca_n_parallel": 5,
-          "greedy_saving": 0.009000000000000001,
-          "ca_saving": 0.011,
-          "same_graph": false,
-          "regret": 0.0019999999999999983
-        },
-        {
-          "budget": 2.8293140412222817,
-          "greedy_n_parallel": 5,
-          "ca_n_parallel": 6,
-          "greedy_saving": 0.011,
-          "ca_saving": 0.013000000000000001,
-          "same_graph": false,
-          "regret": 0.0020000000000000018
-        },
-        {
-          "budget": 3.388958576848667,
-          "greedy_n_parallel": 6,
-          "ca_n_parallel": 8,
-          "greedy_saving": 0.013000000000000001,
-          "ca_saving": 0.017,
-          "same_graph": false,
-          "regret": 0.004
-        },
-        {
-          "budget": 3.9486031124750522,
-          "greedy_n_parallel": 7,
-          "ca_n_parallel": 8,
-          "greedy_saving": 0.015,
-          "ca_saving": 0.018,
-          "same_graph": false,
-          "regret": 0.002999999999999999
-        },
-        {
-          "budget": 4.508247648101438,
-          "greedy_n_parallel": 7,
-          "ca_n_parallel": 9,
-          "greedy_saving": 0.015,
-          "ca_saving": 0.02,
-          "same_graph": false,
-          "regret": 0.005000000000000001
-        },
-        {
-          "budget": 5.067892183727823,
-          "greedy_n_parallel": 8,
-          "ca_n_parallel": 10,
-          "greedy_saving": 0.018,
-          "ca_saving": 0.022000000000000002,
-          "same_graph": false,
-          "regret": 0.0040000000000000036
-        },
-        {
-          "budget": 5.627536719354209,
-          "greedy_n_parallel": 8,
-          "ca_n_parallel": 11,
-          "greedy_saving": 0.018,
-          "ca_saving": 0.024,
-          "same_graph": false,
-          "regret": 0.006000000000000002
-        },
-        {
-          "budget": 6.187181254980594,
-          "greedy_n_parallel": 9,
-          "ca_n_parallel": 12,
-          "greedy_saving": 0.02,
-          "ca_saving": 0.026000000000000002,
-          "same_graph": false,
-          "regret": 0.006000000000000002
-        },
-        {
-          "budget": 6.74682579060698,
-          "greedy_n_parallel": 9,
-          "ca_n_parallel": 12,
-          "greedy_saving": 0.02,
-          "ca_saving": 0.026000000000000002,
-          "same_graph": false,
-          "regret": 0.006000000000000002
-        },
-        {
-          "budget": 7.306470326233365,
-          "greedy_n_parallel": 10,
-          "ca_n_parallel": 12,
-          "greedy_saving": 0.022000000000000002,
-          "ca_saving": 0.026000000000000002,
-          "same_graph": false,
-          "regret": 0.004
-        },
-        {
-          "budget": 7.866114861859749,
-          "greedy_n_parallel": 10,
-          "ca_n_parallel": 12,
-          "greedy_saving": 0.022000000000000002,
-          "ca_saving": 0.026000000000000002,
-          "same_graph": false,
-          "regret": 0.004
-        },
-        {
-          "budget": 8.425759397486136,
-          "greedy_n_parallel": 11,
-          "ca_n_parallel": 12,
-          "greedy_saving": 0.024,
-          "ca_saving": 0.026000000000000002,
-          "same_graph": false,
-          "regret": 0.0020000000000000018
-        },
-        {
-          "budget": 8.985403933112522,
-          "greedy_n_parallel": 11,
-          "ca_n_parallel": 12,
-          "greedy_saving": 0.024,
-          "ca_saving": 0.026000000000000002,
-          "same_graph": false,
-          "regret": 0.0020000000000000018
-        },
-        {
-          "budget": 9.545048468738907,
-          "greedy_n_parallel": 12,
-          "ca_n_parallel": 12,
-          "greedy_saving": 0.026000000000000002,
-          "ca_saving": 0.026000000000000002,
-          "same_graph": true,
-          "regret": 0.0
-        },
-        {
-          "budget": 10.104693004365291,
-          "greedy_n_parallel": 12,
-          "ca_n_parallel": 12,
-          "greedy_saving": 0.026000000000000002,
-          "ca_saving": 0.026000000000000002,
-          "same_graph": true,
-          "regret": 0.0
-        },
-        {
-          "budget": 10.664337539991678,
-          "greedy_n_parallel": 12,
-          "ca_n_parallel": 12,
-          "greedy_saving": 0.026000000000000002,
-          "ca_saving": 0.026000000000000002,
-          "same_graph": true,
-          "regret": 0.0
-        },
-        {
-          "budget": 11.223982075618062,
-          "greedy_n_parallel": 12,
-          "ca_n_parallel": 12,
-          "greedy_saving": 0.026000000000000002,
-          "ca_saving": 0.026000000000000002,
-          "same_graph": true,
-          "regret": 0.0
-        }
-      ]
+    {
+      "budget": 0.8529767607048728,
+      "greedy_k": 4,
+      "dp_k": 5,
+      "match": false,
+      "regret": 1.0,
+      "greedy_saving": 4.0,
+      "dp_saving": 5.0
+    },
+    {
+      "budget": 1.1559693509023679,
+      "greedy_k": 5,
+      "dp_k": 7,
+      "match": false,
+      "regret": 2.0,
+      "greedy_saving": 5.0,
+      "dp_saving": 7.0
+    },
+    {
+      "budget": 1.4589619410998629,
+      "greedy_k": 5,
+      "dp_k": 8,
+      "match": false,
+      "regret": 3.0,
+      "greedy_saving": 5.0,
+      "dp_saving": 8.0
+    },
+    {
+      "budget": 1.761954531297358,
+      "greedy_k": 6,
+      "dp_k": 9,
+      "match": false,
+      "regret": 3.0,
+      "greedy_saving": 6.0,
+      "dp_saving": 9.0
+    },
+    {
+      "budget": 2.064947121494853,
+      "greedy_k": 7,
+      "dp_k": 11,
+      "match": false,
+      "regret": 4.0,
+      "greedy_saving": 7.0,
+      "dp_saving": 11.0
+    },
+    {
+      "budget": 2.3679397116923484,
+      "greedy_k": 8,
+      "dp_k": 12,
+      "match": false,
+      "regret": 4.0,
+      "greedy_saving": 8.0,
+      "dp_saving": 12.0
+    },
+    {
+      "budget": 2.6709323018898434,
+      "greedy_k": 8,
+      "dp_k": 13,
+      "match": false,
+      "regret": 5.0,
+      "greedy_saving": 8.0,
+      "dp_saving": 13.0
+    },
+    {
+      "budget": 2.9739248920873385,
+      "greedy_k": 9,
+      "dp_k": 14,
+      "match": false,
+      "regret": 5.0,
+      "greedy_saving": 9.0,
+      "dp_saving": 14.0
+    },
+    {
+      "budget": 3.2769174822848335,
+      "greedy_k": 9,
+      "dp_k": 15,
+      "match": false,
+      "regret": 6.0,
+      "greedy_saving": 9.0,
+      "dp_saving": 15.0
+    },
+    {
+      "budget": 3.5799100724823285,
+      "greedy_k": 10,
+      "dp_k": 16,
+      "match": false,
+      "regret": 6.0,
+      "greedy_saving": 10.0,
+      "dp_saving": 16.0
+    },
+    {
+      "budget": 3.8829026626798235,
+      "greedy_k": 10,
+      "dp_k": 17,
+      "match": false,
+      "regret": 7.0,
+      "greedy_saving": 10.0,
+      "dp_saving": 17.0
+    },
+    {
+      "budget": 4.185895252877319,
+      "greedy_k": 11,
+      "dp_k": 18,
+      "match": false,
+      "regret": 7.0,
+      "greedy_saving": 11.0,
+      "dp_saving": 18.0
+    },
+    {
+      "budget": 4.488887843074814,
+      "greedy_k": 12,
+      "dp_k": 18,
+      "match": false,
+      "regret": 6.0,
+      "greedy_saving": 12.0,
+      "dp_saving": 18.0
+    },
+    {
+      "budget": 4.791880433272309,
+      "greedy_k": 12,
+      "dp_k": 19,
+      "match": false,
+      "regret": 7.0,
+      "greedy_saving": 12.0,
+      "dp_saving": 19.0
     }
-  }
+  ]
 }
