@@ -160,6 +160,8 @@ class Block(nn.Module):
         return q, k, v, mlp_h
 
     def forward(self, x, ve, cos, sin, mode="sequential"):
+        if mode == "skip":
+            return x
         normalized = _rmsnorm(x)
         if mode == "parallel_fused" and not self.training:
             if self._fused_input_weight is None:
@@ -194,6 +196,8 @@ class Block(nn.Module):
         return x + self.mlp(_rmsnorm(x))
 
     def forward_cached(self, x, ve, cos, sin, mode, past=None):
+        if mode == "skip":
+            return x, past
         normalized = _rmsnorm(x)
         if mode == "parallel_fused" and not self.training:
             if self._fused_input_weight is None:
