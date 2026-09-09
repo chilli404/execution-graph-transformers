@@ -72,7 +72,7 @@ def main():
     stream = val_stream(args.val_shards)
     token_bytes = torch.tensor(
         [len(tokenizer.decode([i]).encode("utf-8")) for i in range(mcfg.vocab_size)],
-        dtype=torch.float32)
+        dtype=torch.long)
 
     n_layers = mcfg.n_layer
 
