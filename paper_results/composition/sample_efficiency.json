@@ -1,0 +1,211 @@
+{
+  "graph_data": "paper_results/core_scaling/430m_poly_graphs.json",
+  "n_layers": 20,
+  "n_multi_masks": 155,
+  "n_trials": 50,
+  "full_pearson": 0.9642722688071328,
+  "k_for_90pct_pearson": 4,
+  "k_for_95pct_pearson": 10,
+  "results_by_k": [
+    {
+      "k": 1,
+      "fraction_measured": 0.05,
+      "pearson_mean": 0.852349000288024,
+      "pearson_std": 1.25607396694702e-16,
+      "spearman_mean": 0.8585500861624675,
+      "spearman_std": 0.0,
+      "rmse_mean": 2.606061540525984,
+      "rmse_std": 1.613056867492579
+    },
+    {
+      "k": 2,
+      "fraction_measured": 0.1,
+      "pearson_mean": 0.8619905013070083,
+      "pearson_std": 0.009828028900785853,
+      "spearman_mean": 0.8685176052544855,
+      "spearman_std": 0.009920780692201946,
+      "rmse_mean": 2.3576897404638286,
+      "rmse_std": 1.2214247546119537
+    },
+    {
+      "k": 3,
+      "fraction_measured": 0.15,
+      "pearson_mean": 0.8663883053950134,
+      "pearson_std": 0.010938253681911803,
+      "spearman_mean": 0.8730359320445095,
+      "spearman_std": 0.011767706138923632,
+      "rmse_mean": 2.04201685215265,
+      "rmse_std": 1.195438761123532
+    },
+    {
+      "k": 4,
+      "fraction_measured": 0.2,
+      "pearson_mean": 0.8754838464045737,
+      "pearson_std": 0.013186447594953988,
+      "spearman_mean": 0.8810387280331047,
+      "spearman_std": 0.013651149558339059,
+      "rmse_mean": 2.107382167457447,
+      "rmse_std": 0.9156319837776028
+    },
+    {
+      "k": 5,
+      "fraction_measured": 0.25,
+      "pearson_mean": 0.881101658169464,
+      "pearson_std": 0.01414990351909676,
+      "spearman_mean": 0.88643721893233,
+      "spearman_std": 0.014071267205315596,
+      "rmse_mean": 2.1536427119730437,
+      "rmse_std": 0.8621071028487439
+    },
+    {
+      "k": 6,
+      "fraction_measured": 0.3,
+      "pearson_mean": 0.8892682028465043,
+      "pearson_std": 0.014414102232713609,
+      "spearman_mean": 0.8947911918435048,
+      "spearman_std": 0.013973284075068402,
+      "rmse_mean": 2.025207617572456,
+      "rmse_std": 0.8403747719507849
+    },
+    {
+      "k": 7,
+      "fraction_measured": 0.35,
+      "pearson_mean": 0.8971326513280572,
+      "pearson_std": 0.014361996599226042,
+      "spearman_mean": 0.9024122382140988,
+      "spearman_std": 0.014017208105942166,
+      "rmse_mean": 1.9211560851958678,
+      "rmse_std": 0.7088852243603774
+    },
+    {
+      "k": 8,
+      "fraction_measured": 0.4,
+      "pearson_mean": 0.9046702563025043,
+      "pearson_std": 0.011788864940312593,
+      "spearman_mean": 0.9100614296910563,
+      "spearman_std": 0.011589082020212296,
+      "rmse_mean": 2.066904462887896,
+      "rmse_std": 0.5498025816809019
+    },
+    {
+      "k": 9,
+      "fraction_measured": 0.45,
+      "pearson_mean": 0.9115180685515045,
+      "pearson_std": 0.011550953685409452,
+      "spearman_mean": 0.9170152153355774,
+      "spearman_std": 0.010697788443694697,
+      "rmse_mean": 2.0695249917567686,
+      "rmse_std": 0.5368543665389642
+    },
+    {
+      "k": 10,
+      "fraction_measured": 0.5,
+      "pearson_mean": 0.9188910060283824,
+      "pearson_std": 0.011147175672438376,
+      "spearman_mean": 0.923242351206275,
+      "spearman_std": 0.011894907220381475,
+      "rmse_mean": 1.9261162775267264,
+      "rmse_std": 0.4288110380010425
+    },
+    {
+      "k": 11,
+      "fraction_measured": 0.55,
+      "pearson_mean": 0.9235787254405922,
+      "pearson_std": 0.011205384863371286,
+      "spearman_mean": 0.9284459610759854,
+      "spearman_std": 0.010294706922236212,
+      "rmse_mean": 1.9271351735283206,
+      "rmse_std": 0.41762829121647993
+    },
+    {
+      "k": 12,
+      "fraction_measured": 0.6,
+      "pearson_mean": 0.9269045365492282,
+      "pearson_std": 0.010777644213361887,
+      "spearman_mean": 0.9318784333001834,
+      "spearman_std": 0.010160628478654232,
+      "rmse_mean": 2.0578045046219566,
+      "rmse_std": 0.36350829995000583
+    },
+    {
+      "k": 13,
+      "fraction_measured": 0.65,
+      "pearson_mean": 0.9344601416141074,
+      "pearson_std": 0.008633323352398014,
+      "spearman_mean": 0.9390879804147835,
+      "spearman_std": 0.007775401566752605,
+      "rmse_mean": 2.016495540462291,
+      "rmse_std": 0.4057089646747324
+    },
+    {
+      "k": 14,
+      "fraction_measured": 0.7,
+      "pearson_mean": 0.9368508844170361,
+      "pearson_std": 0.009021925227604713,
+      "spearman_mean": 0.9412084927523219,
+      "spearman_std": 0.00866900738488317,
+      "rmse_mean": 2.082616447766485,
+      "rmse_std": 0.33150867453406313
+    },
+    {
+      "k": 15,
+      "fraction_measured": 0.75,
+      "pearson_mean": 0.9396207125811585,
+      "pearson_std": 0.008627984205783494,
+      "spearman_mean": 0.9437664968749431,
+      "spearman_std": 0.008048548011751854,
+      "rmse_mean": 2.069331019850207,
+      "rmse_std": 0.3078130142671046
+    },
+    {
+      "k": 16,
+      "fraction_measured": 0.8,
+      "pearson_mean": 0.9474172284736896,
+      "pearson_std": 0.007223366696162205,
+      "spearman_mean": 0.9508057868944271,
+      "spearman_std": 0.006749623842549725,
+      "rmse_mean": 1.97990693636347,
+      "rmse_std": 0.25527600975842035
+    },
+    {
+      "k": 17,
+      "fraction_measured": 0.85,
+      "pearson_mean": 0.9502336397060414,
+      "pearson_std": 0.005453130636539842,
+      "spearman_mean": 0.9536676146953731,
+      "spearman_std": 0.005226619974658235,
+      "rmse_mean": 2.008014225895074,
+      "rmse_std": 0.25381203292503124
+    },
+    {
+      "k": 18,
+      "fraction_measured": 0.9,
+      "pearson_mean": 0.9559736971216078,
+      "pearson_std": 0.004974767237936149,
+      "spearman_mean": 0.9589476321646244,
+      "spearman_std": 0.005161819915086397,
+      "rmse_mean": 1.9875376489976904,
+      "rmse_std": 0.16553413326044633
+    },
+    {
+      "k": 19,
+      "fraction_measured": 0.95,
+      "pearson_mean": 0.9606499582572303,
+      "pearson_std": 0.0032368695477533282,
+      "spearman_mean": 0.9635728787341691,
+      "spearman_std": 0.0030632661973098454,
+      "rmse_mean": 2.02204569786279,
+      "rmse_std": 0.11221738483824512
+    },
+    {
+      "k": 20,
+      "fraction_measured": 1.0,
+      "pearson_mean": 0.9642722688071328,
+      "pearson_std": 1.1102230246251565e-16,
+      "spearman_mean": 0.9668621700879764,
+      "spearman_std": 0.0,
+      "rmse_mean": 2.010889285612975,
+      "rmse_std": 0.0
+    }
+  ]
+}
