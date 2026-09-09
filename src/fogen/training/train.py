@@ -417,12 +417,32 @@ def main():
                     execution_cfg.get("parallel_probability", 0.5),
                     execution_generator,
                     skip_probability=execution_cfg.get("skip_probability", 0.0))
-                loss = model.loss(x, y, mode=execution_mask)
-                execution_metrics = {
-                    "parallel_fraction": torch.tensor(
-                        execution_mask.count("parallel") / mcfg.n_layer,
-                        device=loss.device)
-                }
+                if execution_cfg.get("strategy") == "random_mask_consistent":
+                    seq_logits = model(x, mode="sequential")
+                    mask_logits = model(x, mode=execution_mask)
+                    seq_loss = F.cross_entropy(
+                        seq_logits.view(-1, seq_logits.size(-1)), y.reshape(-1))
+                    mask_loss = F.cross_entropy(
+                        mask_logits.view(-1, mask_logits.size(-1)), y.reshape(-1))
+                    cw = execution_cfg.get("consistency_weight", 0.1)
+                    consistency = _compute_consistency(
+                        seq_logits, mask_logits,
+                        execution_cfg.get("consistency_type", "centered_mse"),
+                        temperature=execution_cfg.get("consistency_temperature", 1.0))
+                    loss = 0.5 * seq_loss + 0.5 * mask_loss + cw * consistency
+                    execution_metrics = {
+                        "sequential_loss": seq_loss,
+                        "mask_loss": mask_loss,
+                        "consistency": consistency,
+                        "consistency_weight": torch.tensor(cw, device=loss.device),
+                    }
+                else:
+                    loss = model.loss(x, y, mode=execution_mask)
+                    execution_metrics = {
+                        "parallel_fraction": torch.tensor(
+                            execution_mask.count("parallel") / mcfg.n_layer,
+                            device=loss.device)
+                    }
             elif execution_cfg.get("enabled", False):
                 gradnorm_rho = execution_cfg.get("gradnorm_rho")
                 if gradnorm_rho is not None:
