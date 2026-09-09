@@ -114,3 +114,50 @@ The coefficient is an empirical calibration parameter, not a universal constant.
 
 \paragraph{Certificate boundary.}
 Theorems~\ref{thm:exact-defect}--\ref{thm:kl-bound} require segment or trajectory-domain bounds. A defect measured only on a reference prompt is not automatically a uniform $D_l$. Our aggregate graph calibration transfers well across corpora, but prompt-adaptive selection exhibits tail undercoverage on held-out ClimbMix prompts. We therefore use \emph{defect predictor} or \emph{budgeted graph ranker} for the empirical method and reserve \emph{certificate} for settings with validated coverage.
+
+\paragraph{Fisher decomposition of multi-layer KL.}
+The first-order expansion $z(m)-z(0)\approx\sum_{l\in m}v_l$ and the quadratic structure of KL divergence near the baseline yield
+\begin{equation}
+  D(m)
+  =\sum_{l\in m}d_l+\sum_{\substack{i<j\\i,j\in m}}C_{ij}+O(\|u\|_1^3),
+  \label{eq:fisher-decompose}
+\end{equation}
+where $d_l=\tfrac12 v_l^\top\!Fv_l$ with $F=\mathrm{diag}(p_0)-p_0p_0^\top$ the Fisher information of the sequential output and $C_{ij}=v_i^\top\!Fv_j$.
+
+\begin{proposition}[Balanced cancellation and the composition exponent]
+\label{prop:balanced-cancel}
+Let $\eta=D(m_{\mathrm{all}})/\!\sum_l d_l$ denote the all-parallel ratio, $L$ the number of layers, and $\bar C=\sum_{i<j}C_{ij}\big/\!\binom{L}{2}$ the mean pairwise Fisher cross-term.
+\begin{enumerate}[label=(\alph*)]
+\item Under the uniform cross-term approximation $C_{ij}\approx\bar C$ for all pairs, the composition ratio for a $k$-layer subset is
+\begin{equation}
+  r(k)\;=\;\frac{D(m)}{D_{\mathrm{add}}(m)}
+  \;\approx\;1-\frac{(k-1)(1-\eta)}{L-1}.
+  \label{eq:ratio-linear}
+\end{equation}
+\item The fitted power-law exponent $\beta$ in $D(m)\approx\alpha_0\!\sum_l d_l\cdot|m|^{-\beta}$ satisfies
+\begin{equation}
+  \beta\;\ge\;\beta_{\mathrm{BC}}
+  \;=\;\frac{\log(1/\eta)}{\log L}.
+  \label{eq:beta-lower}
+\end{equation}
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+(a)~The quadratic decomposition~\eqref{eq:fisher-decompose} with uniform $C_{ij}=\bar C$ gives $D(m)=\sum_{l\in m}d_l+\binom{k}{2}\bar C$. Setting $k=L$ yields $\bar C=(\eta-1)\sum_l d_l\big/\binom{L}{2}$. For a $k$-element subset with $\sum_{l\in m}d_l\approx(k/L)\sum_l d_l$, substitution and simplification give~\eqref{eq:ratio-linear}.
+
+(b)~The linear model~\eqref{eq:ratio-linear} satisfies $r(1)=1$ and $r(L)=\eta$. The empirical ratio curves are concave (faster initial decline, then saturation), so the best-fit power-law exponent through the same endpoints is at least $-\!\log\eta/\log L$.
+\end{proof}
+
+\paragraph{Why subadditivity is not a geometric necessity.}
+Eq.~\eqref{eq:ratio-linear} shows that the sign of the composition correction depends on whether $\eta<1$ (subadditive) or $\eta>1$ (superadditive). Polymorphic-trained models achieve $\eta\in[0.40,0.64]$ across scales, while the sequential-trained 430M baseline has $\eta\approx1.23$---mildly superadditive composition ($\beta<0$). Subadditivity thus arises from the consistency objective driving the all-parallel logits toward the sequential logits, not from defect-vector geometry.
+
+\paragraph{Role of defect orthogonality.}
+The near-zero Euclidean cosines $\cos(\delta_i,\delta_j)\approx0$ reflect the high ambient dimension $d\gg L$ rather than a special geometric arrangement. They imply near-quadratic combination in hidden-state norm ($\|\sum v_l\|^2\approx\sum\|v_l\|^2$), strengthening the Lipschitz bound of Theorem~\ref{thm:graph-bound}. However, the KL cross-term $C_{ij}=v_i^\top\!Fv_j$ involves the Fisher metric $F\ne cI$; its sign is unconstrained by the Euclidean cosine.
+
+\paragraph{Sources of excess $\beta$.}
+The lower bound $\beta_{\mathrm{BC}}$ underestimates the fitted $\beta$ by a factor of 1.3--1.8 across our eight configurations. Two mechanisms account for the gap:
+\begin{itemize}
+\item \emph{Nonlinear remainder.} Measured pairwise interactions are approximately $5\times$ larger than the uniform cross-term prediction, indicating substantial $O(\|u\|_1^3)$ contributions that steepen the power-law fit.
+\item \emph{Defect heterogeneity.} The coefficient of variation $\mathrm{CV}(d_l)$ correlates with the excess $\beta_{\mathrm{fit}}-\beta_{\mathrm{BC}}$ at $\rho=0.90$ ($p=0.002$). Heterogeneous single-layer effects amplify apparent subadditivity because masks selecting high-defect layers have disproportionately large $D_{\mathrm{add}}$ but only moderately larger $D$.
+\end{itemize}
