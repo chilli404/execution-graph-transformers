@@ -83,8 +83,8 @@ def _gradnorm_cw(model, x, y, execution_cfg, rho, step=0):
     con_temp = execution_cfg.get("consistency_temperature", 1.0)
     td = execution_cfg.get("teacher_detach", False)
 
-    def _grad_norm(loss):
-        grads = torch.autograd.grad(loss, params, allow_unused=True)
+    def _grad_norm(loss, retain=False):
+        grads = torch.autograd.grad(loss, params, retain_graph=retain, allow_unused=True)
         return sum(g.detach().float().norm().item() ** 2
                    for g in grads if g is not None) ** 0.5
 
@@ -104,7 +104,7 @@ def _gradnorm_cw(model, x, y, execution_cfg, rho, step=0):
             teacher_detach=td, temperature=con_temp)
 
     print(f"  [gradnorm] grad LM...", flush=True)
-    norm_lm = _grad_norm(lm_loss)
+    norm_lm = _grad_norm(lm_loss, retain=True)
 
     print(f"  [gradnorm] grad con...", flush=True)
     norm_con = _grad_norm(con_loss)
