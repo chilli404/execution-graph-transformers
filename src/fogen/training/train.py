@@ -65,9 +65,12 @@ _gradnorm_cache = {"cw": 0.1, "step": -1}
 def _gradnorm_cw(model, x, y, execution_cfg, rho, step=0):
     """Compute gradient-normalized consistency weight: cw = ρ * ||∇LM|| / ||∇con||.
 
+    Measures gradients of exactly the same objectives used in the training step:
+      LM = (1-pw)*CE_seq + pw*CE_par
+      con = consistency(seq_logits, par_logits)  [symmetric, through both branches]
+
     Only recomputes every gradnorm_every steps (default 100) to amortize cost.
-    Uses gradient checkpointing to fit in memory at 3B+ scale.
-    Clamps output to [1e-4, 10.0] to handle early training where con≈0.
+    Clamps output to [1e-4, 10.0].
     """
     every = execution_cfg.get("gradnorm_every", 100)
     if (step - _gradnorm_cache["step"]) < every:
@@ -75,46 +78,45 @@ def _gradnorm_cw(model, x, y, execution_cfg, rho, step=0):
 
     print(f"  [gradnorm] computing at step {step}...", flush=True)
     params = [p for p in model.parameters() if p.requires_grad]
+    pw = execution_cfg.get("parallel_weight", 0.5)
     con_type = execution_cfg.get("consistency_type", "centered_mse")
     con_temp = execution_cfg.get("consistency_temperature", 1.0)
+    td = execution_cfg.get("teacher_detach", False)
 
-    # Sequential forward + LM loss backward (with grad checkpointing)
-    print(f"  [gradnorm] seq fwd...", flush=True)
+    def _grad_norm(loss):
+        grads = torch.autograd.grad(loss, params, allow_unused=True)
+        return sum(g.detach().float().norm().item() ** 2
+                   for g in grads if g is not None) ** 0.5
+
+    # Single forward pass for both branches
+    print(f"  [gradnorm] fwd...", flush=True)
     with torch.autocast(device_type=x.device.type, dtype=torch.bfloat16,
                         enabled=x.device.type != "cpu"):
-        seq_logits = model(x, mode="sequential", gradient_checkpointing=True)
-        seq_loss = F.cross_entropy(
-            seq_logits.view(-1, seq_logits.size(-1)), y.reshape(-1))
-    print(f"  [gradnorm] seq bwd...", flush=True)
-    seq_loss.backward()
-    norm_lm_seq = sum(
-        p.grad.detach().float().norm().item() ** 2
-        for p in params if p.grad is not None) ** 0.5
-    seq_centered = (seq_logits - seq_logits.mean(dim=-1, keepdim=True)).detach()
-    del seq_logits, seq_loss
-    model.zero_grad(set_to_none=True)
-
-    # Parallel forward + separate consistency gradient measurement
-    print(f"  [gradnorm] con fwd+bwd...", flush=True)
-    with torch.autocast(device_type=x.device.type, dtype=torch.bfloat16,
-                        enabled=x.device.type != "cpu"):
-        par_logits = model(x, mode="parallel", gradient_checkpointing=True)
-        par_centered = par_logits - par_logits.mean(dim=-1, keepdim=True)
+        seq_logits = model(x, mode="sequential")
+        par_logits = model(x, mode="parallel")
+        lm_loss = (
+            (1 - pw) * F.cross_entropy(
+                seq_logits.view(-1, seq_logits.size(-1)), y.reshape(-1))
+            + pw * F.cross_entropy(
+                par_logits.view(-1, par_logits.size(-1)), y.reshape(-1)))
         con_loss = _compute_consistency(
-            seq_centered, par_centered, con_type, temperature=con_temp)
-    con_loss.backward()
-    norm_con = sum(
-        p.grad.detach().float().norm().item() ** 2
-        for p in params if p.grad is not None) ** 0.5
-    norm_lm = norm_lm_seq
-    del par_logits, con_loss, par_centered, seq_centered
+            seq_logits, par_logits, con_type,
+            teacher_detach=td, temperature=con_temp)
+
+    print(f"  [gradnorm] grad LM...", flush=True)
+    norm_lm = _grad_norm(lm_loss)
+
+    print(f"  [gradnorm] grad con...", flush=True)
+    norm_con = _grad_norm(con_loss)
+
+    del seq_logits, par_logits, lm_loss, con_loss
     model.zero_grad(set_to_none=True)
 
     cw = float(rho * norm_lm / max(norm_con, 1e-8))
     cw = max(1e-4, min(cw, 10.0))
     _gradnorm_cache["cw"] = cw
     _gradnorm_cache["step"] = step
-    print(f"  [gradnorm] ||∇LM||={norm_lm:.4f} ||∇con||≈{norm_con:.4f} cw={cw:.4f}",
+    print(f"  [gradnorm] ||∇LM||={norm_lm:.4f} ||∇con||={norm_con:.4f} cw={cw:.4f}",
           flush=True)
     return cw
 
