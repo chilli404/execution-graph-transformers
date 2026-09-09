@@ -1,0 +1,84 @@
+{
+  "method": "beta = beta_BC + c * CV(d_l)",
+  "full_fit": {
+    "c": 0.1772,
+    "r2": 0.91,
+    "rmse": 0.0235
+  },
+  "loocv": {
+    "r2": 0.8814,
+    "rmse": 0.027,
+    "c_range": [
+      0.1668,
+      0.1859
+    ],
+    "max_abs_error": 0.0527,
+    "predictions": [
+      {
+        "model": "120M cw=1.0",
+        "beta_fit": 0.242,
+        "beta_pred": 0.2694,
+        "error": -0.0274,
+        "c_used": 0.1812
+      },
+      {
+        "model": "120M cw=0.1",
+        "beta_fit": 0.271,
+        "beta_pred": 0.2631,
+        "error": 0.0079,
+        "c_used": 0.1761
+      },
+      {
+        "model": "430M cw=1.0",
+        "beta_fit": 0.267,
+        "beta_pred": 0.286,
+        "error": -0.019,
+        "c_used": 0.18
+      },
+      {
+        "model": "430M cw=0.1",
+        "beta_fit": 0.298,
+        "beta_pred": 0.2792,
+        "error": 0.0188,
+        "c_used": 0.1736
+      },
+      {
+        "model": "1B cw=1.0",
+        "beta_fit": 0.275,
+        "beta_pred": 0.2998,
+        "error": -0.0248,
+        "c_used": 0.1811
+      },
+      {
+        "model": "1B cw=0.1",
+        "beta_fit": 0.32,
+        "beta_pred": 0.3077,
+        "error": 0.0123,
+        "c_used": 0.1744
+      },
+      {
+        "model": "3B cw=0.1",
+        "beta_fit": 0.475,
+        "beta_pred": 0.4223,
+        "error": 0.0527,
+        "c_used": 0.1668
+      },
+      {
+        "model": "7B cw=0.1",
+        "beta_fit": 0.426,
+        "beta_pred": 0.4532,
+        "error": -0.0272,
+        "c_used": 0.1859
+      }
+    ]
+  },
+  "blind_9b_test": {
+    "note": "RETROSPECTIVE \u2014 c=0.18 was not frozen in an archived artifact before evaluation",
+    "eta": 0.3798,
+    "cv": 0.6916,
+    "beta_bc": 0.3231,
+    "predicted": 0.4476,
+    "actual": 0.5258,
+    "error": 0.0782
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "config": "configs/scale120m_polymorphic.yaml",
+  "n_batches": 4,
+  "results": [
+    {
+      "lm_loss": 3.0908626914024353,
+      "lm_loss_std": 0.10440960548938874,
+      "mse_consistency": 0.05895420629531145,
+      "mse_consistency_std": 0.0016667936483673075,
+      "kl_consistency": 15.09376335144043,
+      "kl_consistency_std": 0.2613257762080762,
+      "grad_norm_lm": 1.6184100242349064,
+      "grad_norm_lm_std": 0.08434857057817954,
+      "grad_norm_mse": 0.23257085723682974,
+      "grad_norm_mse_std": 0.009051192407514902,
+      "grad_norm_kl": 92.86227496879562,
+      "grad_norm_kl_std": 1.8438789903485957,
+      "ratio_mse_over_lm": 0.14403818791475093,
+      "ratio_mse_over_lm_std": 0.008283668018197882,
+      "ratio_kl_over_lm": 57.5838359035871,
+      "ratio_kl_over_lm_std": 3.9866823028201015,
+      "step": 3500,
+      "checkpoint": "runs/120m_poly_cw01/ckpts/step003500.safetensors",
+      "n_params": 117506060,
+      "d_model": 704,
+      "n_layer": 12
+    }
+  ]
+}

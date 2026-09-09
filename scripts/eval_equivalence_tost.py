@@ -157,13 +157,18 @@ def main():
             raise TypeError(f"Not serializable: {type(obj)}")
 
         Path(args.output).parent.mkdir(parents=True, exist_ok=True)
-        # Convert bools in results
-        for r in out["tests"]:
-            for k, v in r.items():
-                if isinstance(v, bool):
-                    r[k] = int(v)
+
+        class _Encoder(json.JSONEncoder):
+            def default(self, obj):
+                try:
+                    if hasattr(obj, 'item'):
+                        return obj.item()
+                except Exception:
+                    pass
+                return super().default(obj)
+
         with open(args.output, "w") as f:
-            json.dump(out, f, indent=2)
+            json.dump(out, f, indent=2, cls=_Encoder)
         print(f"\nSaved to {args.output}")
 
 

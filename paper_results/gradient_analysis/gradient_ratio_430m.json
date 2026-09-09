@@ -1,0 +1,29 @@
+{
+  "config": "blackwell/configs/scale430m_poly_full.yaml",
+  "n_batches": 4,
+  "results": [
+    {
+      "lm_loss": 2.865283489227295,
+      "lm_loss_std": 0.10268003289061872,
+      "mse_consistency": 0.015136084984987974,
+      "mse_consistency_std": 0.00022356208687086856,
+      "kl_consistency": 4.392633438110352,
+      "kl_consistency_std": 0.06000785527000927,
+      "grad_norm_lm": 2.5140768281737573,
+      "grad_norm_lm_std": 0.10533558987808747,
+      "grad_norm_mse": 0.06912743796395612,
+      "grad_norm_mse_std": 0.001687941671939317,
+      "grad_norm_kl": 39.72456168153797,
+      "grad_norm_kl_std": 1.7067047349950293,
+      "ratio_mse_over_lm": 0.027538525244912994,
+      "ratio_mse_over_lm_std": 0.0012041728845513277,
+      "ratio_kl_over_lm": 15.802752395055055,
+      "ratio_kl_over_lm_std": 0.29456129130510805,
+      "step": 12000,
+      "checkpoint": "runs/430m_poly_full/ckpts/step012000.safetensors",
+      "n_params": 431751188,
+      "d_model": 1152,
+      "n_layer": 20
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "checkpoint": "/s3-data/fogen/pareto/430m_cmse_cw1p0/ckpts/step012000.safetensors",
+  "config": "configs/pareto/430m_cmse_cw1p0.yaml",
+  "agreement": 0.9654541015625,
+  "agreement_std": 0.001658090540430435,
+  "symmetric_kl": 4.246235489845276,
+  "symmetric_kl_std": 0.10620680359352545,
+  "n_batches": 4,
+  "n_params": 431751188,
+  "d_model": 1152
+}
