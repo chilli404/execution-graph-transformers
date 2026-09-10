@@ -1,0 +1,121 @@
+{
+  "checkpoint": "runs/430m_ternary_consistent/ckpts/step012000.safetensors",
+  "n_layers": 20,
+  "batch_size": 8,
+  "ctx_len": 1024,
+  "baseline_ms": 181.1783862503944,
+  "results": [
+    {
+      "mode": "all_sequential",
+      "n_skip": 0,
+      "n_parallel": 0,
+      "latency_ms": 181.1783862503944,
+      "speedup": 1.0
+    },
+    {
+      "mode": "all_parallel",
+      "n_skip": 0,
+      "n_parallel": 20,
+      "latency_ms": 180.4016864974983,
+      "speedup": 1.0043053907531339
+    },
+    {
+      "mode": "all_fused",
+      "n_skip": 0,
+      "n_parallel": 20,
+      "latency_ms": 168.1005627498962,
+      "speedup": 1.0777976187977174
+    },
+    {
+      "mode": "skip_1_last",
+      "n_skip": 1,
+      "n_parallel": 0,
+      "latency_ms": 172.3815770004876,
+      "speedup": 1.0510310289705838
+    },
+    {
+      "mode": "skip_2_last",
+      "n_skip": 2,
+      "n_parallel": 0,
+      "latency_ms": 163.8005943997996,
+      "speedup": 1.106091140354348
+    },
+    {
+      "mode": "skip_3_last",
+      "n_skip": 3,
+      "n_parallel": 0,
+      "latency_ms": 155.13071229797788,
+      "speedup": 1.1679079117640077
+    },
+    {
+      "mode": "skip_4_last",
+      "n_skip": 4,
+      "n_parallel": 0,
+      "latency_ms": 146.52902465022635,
+      "speedup": 1.2364675645857752
+    },
+    {
+      "mode": "skip_5_last",
+      "n_skip": 5,
+      "n_parallel": 0,
+      "latency_ms": 137.72124284878373,
+      "speedup": 1.3155442290723884
+    },
+    {
+      "mode": "skip_6_last",
+      "n_skip": 6,
+      "n_parallel": 0,
+      "latency_ms": 128.9799166494049,
+      "speedup": 1.4047023052656804
+    },
+    {
+      "mode": "skip_7_last",
+      "n_skip": 7,
+      "n_parallel": 0,
+      "latency_ms": 120.16329289763235,
+      "speedup": 1.5077681534971006
+    },
+    {
+      "mode": "skip_8_last",
+      "n_skip": 8,
+      "n_parallel": 0,
+      "latency_ms": 111.35668709757738,
+      "speedup": 1.6270094861176598
+    },
+    {
+      "mode": "skip_9_last",
+      "n_skip": 9,
+      "n_parallel": 0,
+      "latency_ms": 102.46006469824351,
+      "speedup": 1.768282957696594
+    },
+    {
+      "mode": "skip_10_last",
+      "n_skip": 10,
+      "n_parallel": 0,
+      "latency_ms": 93.68810894957278,
+      "speedup": 1.933846122861898
+    },
+    {
+      "mode": "parallel_skip_2",
+      "n_skip": 2,
+      "n_parallel": 18,
+      "latency_ms": 164.64444274897687,
+      "speedup": 1.10042211705029
+    },
+    {
+      "mode": "parallel_skip_4",
+      "n_skip": 4,
+      "n_parallel": 16,
+      "latency_ms": 146.9172355515184,
+      "speedup": 1.2332003496408146
+    },
+    {
+      "mode": "parallel_skip_6",
+      "n_skip": 6,
+      "n_parallel": 14,
+      "latency_ms": 129.1979793983046,
+      "speedup": 1.4023314226288273
+    }
+  ]
+}
