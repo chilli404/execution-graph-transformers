@@ -21,3 +21,4 @@ sky/
 mlruns/
 blackwell/vllm_plugin/uv.lock
 scripts/make_paper_figures_v2.py
+paper_results/
