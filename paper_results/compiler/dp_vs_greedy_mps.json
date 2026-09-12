@@ -1,0 +1,231 @@
+{
+  "profile": "results/data/mps_m4max_graph.json",
+  "n_layers": 12,
+  "n_budgets": 20,
+  "exact_match_fraction": 0.95,
+  "max_regret_ms": 0.008000000000000007,
+  "mean_regret_ms": 0.00040000000000000034,
+  "recovered_benefit": 0.9997224438816223,
+  "budget_sweep": [
+    {
+      "budget": 0.1,
+      "greedy_parallel": 0,
+      "dp_parallel": 0,
+      "match": true,
+      "greedy_saving_ms": 0.0,
+      "dp_saving_ms": 0.0,
+      "regret_ms": 0.0,
+      "greedy_cost": 0.0,
+      "dp_cost": 0.0
+    },
+    {
+      "budget": 0.6851242105263158,
+      "greedy_parallel": 2,
+      "dp_parallel": 2,
+      "match": true,
+      "greedy_saving_ms": 1.1980000000000002,
+      "dp_saving_ms": 1.1980000000000002,
+      "regret_ms": 0.0,
+      "greedy_cost": 0.5178,
+      "dp_cost": 0.5178
+    },
+    {
+      "budget": 1.2702484210526317,
+      "greedy_parallel": 3,
+      "dp_parallel": 3,
+      "match": true,
+      "greedy_saving_ms": 1.364,
+      "dp_saving_ms": 1.364,
+      "regret_ms": 0.0,
+      "greedy_cost": 1.0897,
+      "dp_cost": 1.0897000000000001
+    },
+    {
+      "budget": 1.8553726315789474,
+      "greedy_parallel": 4,
+      "dp_parallel": 4,
+      "match": true,
+      "greedy_saving_ms": 1.493,
+      "dp_saving_ms": 1.493,
+      "regret_ms": 0.0,
+      "greedy_cost": 1.8182,
+      "dp_cost": 1.8182
+    },
+    {
+      "budget": 2.4404968421052633,
+      "greedy_parallel": 5,
+      "dp_parallel": 4,
+      "match": false,
+      "greedy_saving_ms": 1.5090000000000001,
+      "dp_saving_ms": 1.5170000000000001,
+      "regret_ms": 0.008000000000000007,
+      "greedy_cost": 2.2742,
+      "dp_cost": 2.3695999999999997
+    },
+    {
+      "budget": 3.025621052631579,
+      "greedy_parallel": 5,
+      "dp_parallel": 5,
+      "match": true,
+      "greedy_saving_ms": 1.6030000000000002,
+      "dp_saving_ms": 1.6030000000000002,
+      "regret_ms": 0.0,
+      "greedy_cost": 2.7623,
+      "dp_cost": 2.7622999999999998
+    },
+    {
+      "budget": 3.6107452631578947,
+      "greedy_parallel": 6,
+      "dp_parallel": 6,
+      "match": true,
+      "greedy_saving_ms": 1.6460000000000001,
+      "dp_saving_ms": 1.6460000000000001,
+      "regret_ms": 0.0,
+      "greedy_cost": 3.4449,
+      "dp_cost": 3.4448999999999996
+    },
+    {
+      "budget": 4.19586947368421,
+      "greedy_parallel": 7,
+      "dp_parallel": 7,
+      "match": true,
+      "greedy_saving_ms": 1.6620000000000001,
+      "dp_saving_ms": 1.6620000000000001,
+      "regret_ms": 0.0,
+      "greedy_cost": 3.9009,
+      "dp_cost": 3.9008999999999996
+    },
+    {
+      "budget": 4.780993684210526,
+      "greedy_parallel": 7,
+      "dp_parallel": 7,
+      "match": true,
+      "greedy_saving_ms": 1.6620000000000001,
+      "dp_saving_ms": 1.6620000000000001,
+      "regret_ms": 0.0,
+      "greedy_cost": 3.9009,
+      "dp_cost": 3.9008999999999996
+    },
+    {
+      "budget": 5.366117894736842,
+      "greedy_parallel": 7,
+      "dp_parallel": 7,
+      "match": true,
+      "greedy_saving_ms": 1.6620000000000001,
+      "dp_saving_ms": 1.6620000000000001,
+      "regret_ms": 0.0,
+      "greedy_cost": 3.9009,
+      "dp_cost": 3.9008999999999996
+    },
+    {
+      "budget": 5.951242105263158,
+      "greedy_parallel": 7,
+      "dp_parallel": 7,
+      "match": true,
+      "greedy_saving_ms": 1.6620000000000001,
+      "dp_saving_ms": 1.6620000000000001,
+      "regret_ms": 0.0,
+      "greedy_cost": 3.9009,
+      "dp_cost": 3.9008999999999996
+    },
+    {
+      "budget": 6.536366315789474,
+      "greedy_parallel": 7,
+      "dp_parallel": 7,
+      "match": true,
+      "greedy_saving_ms": 1.6620000000000001,
+      "dp_saving_ms": 1.6620000000000001,
+      "regret_ms": 0.0,
+      "greedy_cost": 3.9009,
+      "dp_cost": 3.9008999999999996
+    },
+    {
+      "budget": 7.121490526315789,
+      "greedy_parallel": 7,
+      "dp_parallel": 7,
+      "match": true,
+      "greedy_saving_ms": 1.6620000000000001,
+      "dp_saving_ms": 1.6620000000000001,
+      "regret_ms": 0.0,
+      "greedy_cost": 3.9009,
+      "dp_cost": 3.9008999999999996
+    },
+    {
+      "budget": 7.706614736842105,
+      "greedy_parallel": 7,
+      "dp_parallel": 7,
+      "match": true,
+      "greedy_saving_ms": 1.6620000000000001,
+      "dp_saving_ms": 1.6620000000000001,
+      "regret_ms": 0.0,
+      "greedy_cost": 3.9009,
+      "dp_cost": 3.9008999999999996
+    },
+    {
+      "budget": 8.29173894736842,
+      "greedy_parallel": 7,
+      "dp_parallel": 7,
+      "match": true,
+      "greedy_saving_ms": 1.6620000000000001,
+      "dp_saving_ms": 1.6620000000000001,
+      "regret_ms": 0.0,
+      "greedy_cost": 3.9009,
+      "dp_cost": 3.9008999999999996
+    },
+    {
+      "budget": 8.876863157894737,
+      "greedy_parallel": 7,
+      "dp_parallel": 7,
+      "match": true,
+      "greedy_saving_ms": 1.6620000000000001,
+      "dp_saving_ms": 1.6620000000000001,
+      "regret_ms": 0.0,
+      "greedy_cost": 3.9009,
+      "dp_cost": 3.9008999999999996
+    },
+    {
+      "budget": 9.461987368421052,
+      "greedy_parallel": 7,
+      "dp_parallel": 7,
+      "match": true,
+      "greedy_saving_ms": 1.6620000000000001,
+      "dp_saving_ms": 1.6620000000000001,
+      "regret_ms": 0.0,
+      "greedy_cost": 3.9009,
+      "dp_cost": 3.9008999999999996
+    },
+    {
+      "budget": 10.047111578947368,
+      "greedy_parallel": 7,
+      "dp_parallel": 7,
+      "match": true,
+      "greedy_saving_ms": 1.6620000000000001,
+      "dp_saving_ms": 1.6620000000000001,
+      "regret_ms": 0.0,
+      "greedy_cost": 3.9009,
+      "dp_cost": 3.9008999999999996
+    },
+    {
+      "budget": 10.632235789473684,
+      "greedy_parallel": 7,
+      "dp_parallel": 7,
+      "match": true,
+      "greedy_saving_ms": 1.6620000000000001,
+      "dp_saving_ms": 1.6620000000000001,
+      "regret_ms": 0.0,
+      "greedy_cost": 3.9009,
+      "dp_cost": 3.9008999999999996
+    },
+    {
+      "budget": 11.21736,
+      "greedy_parallel": 7,
+      "dp_parallel": 7,
+      "match": true,
+      "greedy_saving_ms": 1.6620000000000001,
+      "dp_saving_ms": 1.6620000000000001,
+      "regret_ms": 0.0,
+      "greedy_cost": 3.9009,
+      "dp_cost": 3.9008999999999996
+    }
+  ]
+}

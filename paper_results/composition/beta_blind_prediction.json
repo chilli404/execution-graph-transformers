@@ -1,0 +1,15 @@
+{
+  "timestamp": "2026-09-09T07:56:30.979792Z",
+  "description": "Blind prospective prediction of beta for future 430M 10B checkpoints",
+  "formula": "beta = beta_BC + c * CV(d_l)",
+  "frozen_c": 0.18,
+  "frozen_before_step": 72000,
+  "note": "All checkpoints at step >= 72000 are genuinely prospective. c=0.18 was fitted on 8 configurations (120M-7B at 100M tokens) and has not been updated.",
+  "prior_blind_test": {
+    "step": 69000,
+    "predicted": 0.4476,
+    "actual": 0.5258,
+    "error": 0.0782,
+    "status": "RETROSPECTIVE \u2014 c was not archived before this evaluation"
+  }
+}

@@ -1,0 +1,359 @@
+{
+  "graph_data": "paper_results/core_scaling/430m_poly_graphs.json",
+  "n_layers": 20,
+  "n_splits": 10,
+  "raw_violation": {
+    "mean": 0.3820512820512821,
+    "std": 0.0521717691009636
+  },
+  "cal95_violation": {
+    "mean": 0.052564102564102565,
+    "std": 0.036011722833815735
+  },
+  "cal99_violation": {
+    "mean": 0.024358974358974363,
+    "std": 0.020230427997512176
+  },
+  "splits": [
+    {
+      "n_cal": 77,
+      "n_eval": 78,
+      "alpha0": 1.2466083564734562,
+      "beta": 0.2610465135134685,
+      "margin_95": 0.5005986660059207,
+      "margin_99": 0.5756526145566786,
+      "raw_violation_rate": 0.358974358974359,
+      "cal95_violation_rate": 0.05128205128205128,
+      "cal99_violation_rate": 0.01282051282051282,
+      "compiler_comparison": [
+        {
+          "budget_percentile": 25,
+          "budget": 2.1220891401280824,
+          "compiler_n_parallel": 7,
+          "oracle_n_parallel": 12,
+          "recovered_fraction": 0.5833333333333334
+        },
+        {
+          "budget_percentile": 50,
+          "budget": 3.123558275412506,
+          "compiler_n_parallel": 9,
+          "oracle_n_parallel": 14,
+          "recovered_fraction": 0.6428571428571429
+        },
+        {
+          "budget_percentile": 75,
+          "budget": 4.2497879192342225,
+          "compiler_n_parallel": 11,
+          "oracle_n_parallel": 18,
+          "recovered_fraction": 0.6111111111111112
+        }
+      ]
+    },
+    {
+      "n_cal": 77,
+      "n_eval": 78,
+      "alpha0": 1.253469535153085,
+      "beta": 0.26705146301725424,
+      "margin_95": 0.4568845190978724,
+      "margin_99": 0.5462816012612413,
+      "raw_violation_rate": 0.4358974358974359,
+      "cal95_violation_rate": 0.08974358974358974,
+      "cal99_violation_rate": 0.0641025641025641,
+      "compiler_comparison": [
+        {
+          "budget_percentile": 25,
+          "budget": 2.3605133220662537,
+          "compiler_n_parallel": 8,
+          "oracle_n_parallel": 11,
+          "recovered_fraction": 0.7272727272727273
+        },
+        {
+          "budget_percentile": 50,
+          "budget": 3.3479303047170106,
+          "compiler_n_parallel": 10,
+          "oracle_n_parallel": 15,
+          "recovered_fraction": 0.6666666666666666
+        },
+        {
+          "budget_percentile": 75,
+          "budget": 4.469436399649567,
+          "compiler_n_parallel": 12,
+          "oracle_n_parallel": 19,
+          "recovered_fraction": 0.631578947368421
+        }
+      ]
+    },
+    {
+      "n_cal": 77,
+      "n_eval": 78,
+      "alpha0": 1.3032933775237003,
+      "beta": 0.2782187270882484,
+      "margin_95": 0.5559047797444877,
+      "margin_99": 0.5895239264504171,
+      "raw_violation_rate": 0.3333333333333333,
+      "cal95_violation_rate": 0.01282051282051282,
+      "cal99_violation_rate": 0.01282051282051282,
+      "compiler_comparison": [
+        {
+          "budget_percentile": 25,
+          "budget": 2.204262964438385,
+          "compiler_n_parallel": 7,
+          "oracle_n_parallel": 12,
+          "recovered_fraction": 0.5833333333333334
+        },
+        {
+          "budget_percentile": 50,
+          "budget": 3.205973856162018,
+          "compiler_n_parallel": 9,
+          "oracle_n_parallel": 15,
+          "recovered_fraction": 0.6
+        },
+        {
+          "budget_percentile": 75,
+          "budget": 4.33548461646933,
+          "compiler_n_parallel": 11,
+          "oracle_n_parallel": 19,
+          "recovered_fraction": 0.5789473684210527
+        }
+      ]
+    },
+    {
+      "n_cal": 77,
+      "n_eval": 78,
+      "alpha0": 1.1933369892507717,
+      "beta": 0.24966081618239178,
+      "margin_95": 0.609560582855844,
+      "margin_99": 0.625629957603641,
+      "raw_violation_rate": 0.5,
+      "cal95_violation_rate": 0.02564102564102564,
+      "cal99_violation_rate": 0.02564102564102564,
+      "compiler_comparison": [
+        {
+          "budget_percentile": 25,
+          "budget": 2.2396913692464295,
+          "compiler_n_parallel": 8,
+          "oracle_n_parallel": 12,
+          "recovered_fraction": 0.6666666666666666
+        },
+        {
+          "budget_percentile": 50,
+          "budget": 3.436387412260956,
+          "compiler_n_parallel": 10,
+          "oracle_n_parallel": 16,
+          "recovered_fraction": 0.625
+        },
+        {
+          "budget_percentile": 75,
+          "budget": 4.508850447844452,
+          "compiler_n_parallel": 12,
+          "oracle_n_parallel": 19,
+          "recovered_fraction": 0.631578947368421
+        }
+      ]
+    },
+    {
+      "n_cal": 77,
+      "n_eval": 78,
+      "alpha0": 1.246578655327618,
+      "beta": 0.2617942787159716,
+      "margin_95": 0.5212239711104573,
+      "margin_99": 0.5852218173164753,
+      "raw_violation_rate": 0.38461538461538464,
+      "cal95_violation_rate": 0.05128205128205128,
+      "cal99_violation_rate": 0.01282051282051282,
+      "compiler_comparison": [
+        {
+          "budget_percentile": 25,
+          "budget": 2.1205921098699037,
+          "compiler_n_parallel": 7,
+          "oracle_n_parallel": 12,
+          "recovered_fraction": 0.5833333333333334
+        },
+        {
+          "budget_percentile": 50,
+          "budget": 3.440362088393158,
+          "compiler_n_parallel": 10,
+          "oracle_n_parallel": 13,
+          "recovered_fraction": 0.7692307692307693
+        },
+        {
+          "budget_percentile": 75,
+          "budget": 4.498806945990509,
+          "compiler_n_parallel": 12,
+          "oracle_n_parallel": 19,
+          "recovered_fraction": 0.631578947368421
+        }
+      ]
+    },
+    {
+      "n_cal": 77,
+      "n_eval": 78,
+      "alpha0": 1.2217622890892093,
+      "beta": 0.25179559645792593,
+      "margin_95": 0.5452070760781114,
+      "margin_99": 0.5717207284657374,
+      "raw_violation_rate": 0.358974358974359,
+      "cal95_violation_rate": 0.02564102564102564,
+      "cal99_violation_rate": 0.01282051282051282,
+      "compiler_comparison": [
+        {
+          "budget_percentile": 25,
+          "budget": 2.2396913692464295,
+          "compiler_n_parallel": 8,
+          "oracle_n_parallel": 11,
+          "recovered_fraction": 0.7272727272727273
+        },
+        {
+          "budget_percentile": 50,
+          "budget": 3.1934670135487977,
+          "compiler_n_parallel": 10,
+          "oracle_n_parallel": 14,
+          "recovered_fraction": 0.7142857142857143
+        },
+        {
+          "budget_percentile": 75,
+          "budget": 4.339050047110504,
+          "compiler_n_parallel": 12,
+          "oracle_n_parallel": 19,
+          "recovered_fraction": 0.631578947368421
+        }
+      ]
+    },
+    {
+      "n_cal": 77,
+      "n_eval": 78,
+      "alpha0": 1.3016047640103272,
+      "beta": 0.2786635949299975,
+      "margin_95": 0.5182263043038148,
+      "margin_99": 0.5926801885031382,
+      "raw_violation_rate": 0.3333333333333333,
+      "cal95_violation_rate": 0.05128205128205128,
+      "cal99_violation_rate": 0.01282051282051282,
+      "compiler_comparison": [
+        {
+          "budget_percentile": 25,
+          "budget": 1.9226772114743653,
+          "compiler_n_parallel": 7,
+          "oracle_n_parallel": 10,
+          "recovered_fraction": 0.7
+        },
+        {
+          "budget_percentile": 50,
+          "budget": 3.020964019011444,
+          "compiler_n_parallel": 9,
+          "oracle_n_parallel": 15,
+          "recovered_fraction": 0.6
+        },
+        {
+          "budget_percentile": 75,
+          "budget": 4.059559814642853,
+          "compiler_n_parallel": 11,
+          "oracle_n_parallel": 17,
+          "recovered_fraction": 0.6470588235294118
+        }
+      ]
+    },
+    {
+      "n_cal": 77,
+      "n_eval": 78,
+      "alpha0": 1.2348478249946975,
+      "beta": 0.2619717423355443,
+      "margin_95": 0.36657386922923607,
+      "margin_99": 0.5404052489077851,
+      "raw_violation_rate": 0.41025641025641024,
+      "cal95_violation_rate": 0.14102564102564102,
+      "cal99_violation_rate": 0.0641025641025641,
+      "compiler_comparison": [
+        {
+          "budget_percentile": 25,
+          "budget": 2.1205921098699037,
+          "compiler_n_parallel": 7,
+          "oracle_n_parallel": 12,
+          "recovered_fraction": 0.5833333333333334
+        },
+        {
+          "budget_percentile": 50,
+          "budget": 3.2164945528020326,
+          "compiler_n_parallel": 9,
+          "oracle_n_parallel": 15,
+          "recovered_fraction": 0.6
+        },
+        {
+          "budget_percentile": 75,
+          "budget": 4.3354414627065125,
+          "compiler_n_parallel": 11,
+          "oracle_n_parallel": 19,
+          "recovered_fraction": 0.5789473684210527
+        }
+      ]
+    },
+    {
+      "n_cal": 77,
+      "n_eval": 78,
+      "alpha0": 1.2196678680088797,
+      "beta": 0.2502327061758074,
+      "margin_95": 0.5330905699239462,
+      "margin_99": 0.5618705972054492,
+      "raw_violation_rate": 0.32051282051282054,
+      "cal95_violation_rate": 0.02564102564102564,
+      "cal99_violation_rate": 0.01282051282051282,
+      "compiler_comparison": [
+        {
+          "budget_percentile": 25,
+          "budget": 2.337594799708313,
+          "compiler_n_parallel": 8,
+          "oracle_n_parallel": 11,
+          "recovered_fraction": 0.7272727272727273
+        },
+        {
+          "budget_percentile": 50,
+          "budget": 3.233158580969757,
+          "compiler_n_parallel": 10,
+          "oracle_n_parallel": 11,
+          "recovered_fraction": 0.9090909090909091
+        },
+        {
+          "budget_percentile": 75,
+          "budget": 4.3354414627065125,
+          "compiler_n_parallel": 12,
+          "oracle_n_parallel": 19,
+          "recovered_fraction": 0.631578947368421
+        }
+      ]
+    },
+    {
+      "n_cal": 77,
+      "n_eval": 78,
+      "alpha0": 1.2628919344700626,
+      "beta": 0.2669198274666475,
+      "margin_95": 0.5220225682081507,
+      "margin_99": 0.5876752847458887,
+      "raw_violation_rate": 0.38461538461538464,
+      "cal95_violation_rate": 0.05128205128205128,
+      "cal99_violation_rate": 0.01282051282051282,
+      "compiler_comparison": [
+        {
+          "budget_percentile": 25,
+          "budget": 2.225156418990082,
+          "compiler_n_parallel": 7,
+          "oracle_n_parallel": 12,
+          "recovered_fraction": 0.5833333333333334
+        },
+        {
+          "budget_percentile": 50,
+          "budget": 3.199307434271759,
+          "compiler_n_parallel": 9,
+          "oracle_n_parallel": 14,
+          "recovered_fraction": 0.6428571428571429
+        },
+        {
+          "budget_percentile": 75,
+          "budget": 4.418572895239777,
+          "compiler_n_parallel": 11,
+          "oracle_n_parallel": 19,
+          "recovered_fraction": 0.5789473684210527
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+[
+  {
+    "mode": "sequential",
+    "max_logit_diff": 8.542098045349121,
+    "top_token_match": true
+  },
+  {
+    "mode": "parallel",
+    "max_logit_diff": 8.267831802368164,
+    "top_token_match": true
+  },
+  {
+    "mode": "parallel_fused",
+    "max_logit_diff": 8.267831802368164,
+    "top_token_match": true
+  },
+  {
+    "match_length": 37,
+    "total_length": 37,
+    "exact_match": true
+  }
+]

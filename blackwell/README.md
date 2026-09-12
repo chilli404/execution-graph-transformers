@@ -15,9 +15,21 @@ This is a confirmation and deployment phase, not a new hyperparameter exploratio
 
 ## A1. Freeze the software stack
 
-Use an isolated environment rather than modifying a shared system Python.
+Use uv for reproducible environment setup:
 
-Recommended starting point:
+```bash
+uv sync --extra dev
+uv run pytest -q  # verify compiler and tests pass
+```
+
+For vLLM (Work Package B), create a separate environment since vLLM pins its own torch:
+
+```bash
+uv venv .venv-vllm --python 3.12
+uv pip install vllm==0.27.1 --python .venv-vllm/bin/python
+```
+
+Recommended versions:
 
 ```text
 Python: 3.12
@@ -41,7 +53,7 @@ Record:
 Use:
 
 ```bash
-PYTHONPATH=src python scripts/export_hf_checkpoint.py \
+uv run python scripts/export_hf_checkpoint.py \
   --ckpt <checkpoint.safetensors> \
   --config <config_used.yaml> \
   --tokenizer_dir <tokenizer_dir> \

@@ -24,6 +24,7 @@ from fogen.evals.scoring import aggregate, fogen_scorer, load_battery
 from fogen.model import GPT, ModelConfig
 from fogen.training.margin_guard import forced_choice_margin, project_gradient_
 from fogen.training.muon import Muon
+from fogen.training.tracking import create_tracker
 
 
 def active_loader(step, loader_a, loader_b=None, switch_step=None):
@@ -44,9 +45,83 @@ def lr_scale(step: int, total: int, warmdown_frac: float) -> float:
     return 0.5 * (1 + math.cos(math.pi * t))
 
 
-def random_execution_mask(n_layers, parallel_probability, generator):
-    parallel = torch.rand(n_layers, generator=generator) < parallel_probability
-    return ["parallel" if value else "sequential" for value in parallel.tolist()]
+def random_execution_mask(n_layers, parallel_probability, generator,
+                          skip_probability=0.0):
+    r = torch.rand(n_layers, generator=generator)
+    modes = []
+    for v in r.tolist():
+        if v < skip_probability:
+            modes.append("skip")
+        elif v < skip_probability + parallel_probability:
+            modes.append("parallel")
+        else:
+            modes.append("sequential")
+    return modes
+
+
+_gradnorm_cache = {"cw": 0.1, "step": -1}
+
+
+def _gradnorm_cw(model, x, y, execution_cfg, rho, step=0):
+    """Compute gradient-normalized consistency weight: cw = ρ * ||∇LM|| / ||∇con||.
+
+    Measures gradients of exactly the same objectives used in the training step:
+      LM = (1-pw)*CE_seq + pw*CE_par
+      con = consistency(seq_logits, par_logits)  [symmetric, through both branches]
+
+    Only recomputes every gradnorm_every steps (default 100) to amortize cost.
+    Clamps output to [1e-4, 10.0].
+    """
+    every = execution_cfg.get("gradnorm_every", 100)
+    if (step - _gradnorm_cache["step"]) < every:
+        return _gradnorm_cache["cw"]
+
+    print(f"  [gradnorm] computing at step {step}...", flush=True)
+    params = [p for p in model.parameters() if p.requires_grad]
+    pw = execution_cfg.get("parallel_weight", 0.5)
+    con_type = execution_cfg.get("consistency_type", "centered_mse")
+    con_temp = execution_cfg.get("consistency_temperature", 1.0)
+    td = execution_cfg.get("teacher_detach", False)
+
+    def _grad_norm(loss, retain=False):
+        grads = torch.autograd.grad(loss, params, retain_graph=retain, allow_unused=True)
+        return sum(g.detach().float().norm().item() ** 2
+                   for g in grads if g is not None) ** 0.5
+
+    # Separate forward passes to avoid OOM from retain_graph at 3B+
+    print(f"  [gradnorm] LM fwd+grad...", flush=True)
+    with torch.autocast(device_type=x.device.type, dtype=torch.bfloat16,
+                        enabled=x.device.type != "cpu"):
+        seq_logits = model(x, mode="sequential", gradient_checkpointing=True)
+        par_logits = model(x, mode="parallel", gradient_checkpointing=True)
+        lm_loss = (
+            (1 - pw) * F.cross_entropy(
+                seq_logits.view(-1, seq_logits.size(-1)), y.reshape(-1))
+            + pw * F.cross_entropy(
+                par_logits.view(-1, par_logits.size(-1)), y.reshape(-1)))
+    norm_lm = _grad_norm(lm_loss)
+    del seq_logits, par_logits, lm_loss
+    model.zero_grad(set_to_none=True)
+
+    print(f"  [gradnorm] con fwd+grad...", flush=True)
+    with torch.autocast(device_type=x.device.type, dtype=torch.bfloat16,
+                        enabled=x.device.type != "cpu"):
+        seq_logits = model(x, mode="sequential", gradient_checkpointing=True)
+        par_logits = model(x, mode="parallel", gradient_checkpointing=True)
+        con_loss = _compute_consistency(
+            seq_logits, par_logits, con_type,
+            teacher_detach=td, temperature=con_temp)
+    norm_con = _grad_norm(con_loss)
+    del seq_logits, par_logits, con_loss
+    model.zero_grad(set_to_none=True)
+
+    cw = float(rho * norm_lm / max(norm_con, 1e-8))
+    cw = max(1e-4, min(cw, 10.0))
+    _gradnorm_cache["cw"] = cw
+    _gradnorm_cache["step"] = step
+    print(f"  [gradnorm] ||∇LM||={norm_lm:.4f} ||∇con||={norm_con:.4f} cw={cw:.4f}",
+          flush=True)
+    return cw
 
 
 def consistency_weight(step, total, config):
@@ -63,18 +138,54 @@ def consistency_weight(step, total, config):
     return end_weight + (start_weight - end_weight) * cosine
 
 
+def _compute_consistency(sequential_logits, parallel_logits, consistency_type,
+                         teacher_detach=False, temperature=1.0):
+    if consistency_type == "raw_mse":
+        target = sequential_logits.detach() if teacher_detach else sequential_logits
+        return F.mse_loss(parallel_logits, target)
+    if consistency_type == "kl_forward":
+        seq_logprob = F.log_softmax(
+            (sequential_logits.detach() if teacher_detach else sequential_logits) / temperature,
+            dim=-1)
+        par_logprob = F.log_softmax(parallel_logits / temperature, dim=-1)
+        return F.kl_div(par_logprob, seq_logprob.exp(), reduction="batchmean") * (temperature ** 2)
+    if consistency_type == "symmetric_kl":
+        seq_lp = F.log_softmax(
+            (sequential_logits.detach() if teacher_detach else sequential_logits) / temperature,
+            dim=-1)
+        par_lp = F.log_softmax(parallel_logits / temperature, dim=-1)
+        return (F.kl_div(par_lp, seq_lp.exp(), reduction="batchmean")
+                + F.kl_div(seq_lp, par_lp.exp(), reduction="batchmean")) / 2 * (temperature ** 2)
+    if consistency_type == "jensen_shannon":
+        seq_lp = F.log_softmax(
+            (sequential_logits.detach() if teacher_detach else sequential_logits) / temperature,
+            dim=-1)
+        par_lp = F.log_softmax(parallel_logits / temperature, dim=-1)
+        m = (seq_lp.exp() + par_lp.exp()) / 2
+        return (F.kl_div(seq_lp, m, reduction="batchmean")
+                + F.kl_div(par_lp, m, reduction="batchmean")) / 2 * (temperature ** 2)
+    # Default: centered_mse
+    seq_centered = sequential_logits - sequential_logits.mean(dim=-1, keepdim=True)
+    par_centered = parallel_logits - parallel_logits.mean(dim=-1, keepdim=True)
+    target = seq_centered.detach() if teacher_detach else seq_centered
+    return F.mse_loss(par_centered, target)
+
+
 def polymorphic_loss(model, inputs, targets, parallel_weight, consistency_weight,
-                     teacher_detach=False):
+                     teacher_detach=False, memory_efficient=False,
+                     consistency_type="centered_mse", temperature=1.0):
+    if memory_efficient:
+        return _polymorphic_loss_memory_efficient(
+            model, inputs, targets, parallel_weight, consistency_weight,
+            consistency_type=consistency_type, temperature=temperature)
     sequential_logits = model(inputs, mode="sequential")
     parallel_logits = model(inputs, mode="parallel")
     sequential_loss = F.cross_entropy(
         sequential_logits.view(-1, sequential_logits.size(-1)), targets.reshape(-1))
     parallel_loss = F.cross_entropy(
         parallel_logits.view(-1, parallel_logits.size(-1)), targets.reshape(-1))
-    sequential_centered = sequential_logits - sequential_logits.mean(dim=-1, keepdim=True)
-    parallel_centered = parallel_logits - parallel_logits.mean(dim=-1, keepdim=True)
-    consistency_target = sequential_centered.detach() if teacher_detach else sequential_centered
-    consistency = F.mse_loss(parallel_centered, consistency_target)
+    consistency = _compute_consistency(
+        sequential_logits, parallel_logits, consistency_type, teacher_detach, temperature)
     total = (
         (1 - parallel_weight) * sequential_loss
         + parallel_weight * parallel_loss
@@ -87,12 +198,60 @@ def polymorphic_loss(model, inputs, targets, parallel_weight, consistency_weight
     }
 
 
-def save_checkpoint(model, out_dir: Path, step: int):
+def _polymorphic_loss_memory_efficient(model, inputs, targets, parallel_weight,
+                                       consistency_weight,
+                                       consistency_type="centered_mse",
+                                       temperature=1.0):
+    """Backward each graph separately with gradient checkpointing.
+
+    Uses teacher_detach semantics for the consistency term and recomputes
+    layer activations during backward. This reduces peak memory from
+    ~2x model activations to ~1x per-layer activations, enabling 7B
+    training on a single 96GB GPU.
+    """
+    # Forward + backward sequential path (with gradient checkpointing)
+    sequential_logits = model(inputs, mode="sequential", gradient_checkpointing=True)
+    sequential_loss = F.cross_entropy(
+        sequential_logits.view(-1, sequential_logits.size(-1)), targets.reshape(-1))
+    ((1 - parallel_weight) * sequential_loss).backward()
+    sequential_logits_detached = sequential_logits.detach()
+    sequential_loss_val = sequential_loss.detach()
+    del sequential_logits
+
+    # Forward + backward parallel path (with gradient checkpointing)
+    parallel_logits = model(inputs, mode="parallel", gradient_checkpointing=True)
+    parallel_loss = F.cross_entropy(
+        parallel_logits.view(-1, parallel_logits.size(-1)), targets.reshape(-1))
+    consistency = _compute_consistency(
+        sequential_logits_detached, parallel_logits, consistency_type,
+        teacher_detach=True, temperature=temperature)
+    (parallel_weight * parallel_loss + consistency_weight * consistency).backward()
+    parallel_loss_val = parallel_loss.detach()
+    consistency_val = consistency.detach()
+    del parallel_logits
+
+    total = (
+        (1 - parallel_weight) * sequential_loss_val
+        + parallel_weight * parallel_loss_val
+        + consistency_weight * consistency_val
+    )
+    return total, {
+        "sequential_loss": sequential_loss_val,
+        "parallel_loss": parallel_loss_val,
+        "consistency": consistency_val,
+    }
+
+
+def save_checkpoint(model, out_dir: Path, step: int,
+                    muon=None, adamw=None):
     from safetensors.torch import save_file
     out_dir.mkdir(parents=True, exist_ok=True)
     state = {k: v.bfloat16() for k, v in model.state_dict().items()
              if not k.startswith("rope_")}
     save_file(state, str(out_dir / f"step{step:06d}.safetensors"))
+    if muon is not None and adamw is not None:
+        torch.save({"muon": muon.state_dict(), "adamw": adamw.state_dict(),
+                     "step": step}, str(out_dir / f"opt{step:06d}.pt"))
 
 
 def checkpoint_steps(cfg: dict, total: int) -> set[int]:
@@ -110,7 +269,11 @@ def main():
     ap.add_argument("--seed", type=int, required=True)
     ap.add_argument("--out", default=None)
     ap.add_argument("--init-ckpt")
+    ap.add_argument("--resume", action="store_true",
+                    help="Resume from latest checkpoint in output dir")
     ap.add_argument("--no-wandb", action="store_true")
+    ap.add_argument("--mlflow", action="store_true",
+                    help="Use MLflow for experiment tracking")
     args = ap.parse_args()
 
     cfg = yaml.safe_load(open(args.config))
@@ -121,10 +284,27 @@ def main():
     (out / "config_used.yaml").write_text(yaml.dump({**cfg, "seed": args.seed}))
 
     mcfg = ModelConfig(**cfg["model"])
-    model = GPT(mcfg).to(device)
-    if args.init_ckpt:
+    param_dtype = torch.bfloat16 if cfg.get("train", {}).get("bf16_params", False) else torch.float32
+    model = GPT(mcfg).to(device=device, dtype=param_dtype)
+
+    resume_step = 0
+    resume_opt_path = None
+    init_ckpt = args.init_ckpt
+    if args.resume:
+        ckpt_dir = out / "ckpts"
+        if ckpt_dir.exists():
+            ckpts = sorted(ckpt_dir.glob("step*.safetensors"))
+            if ckpts:
+                init_ckpt = str(ckpts[-1])
+                resume_step = int(ckpts[-1].stem.replace("step", ""))
+                opt_path = ckpt_dir / f"opt{resume_step:06d}.pt"
+                if opt_path.exists():
+                    resume_opt_path = str(opt_path)
+                print(f"Resuming from {init_ckpt} (step {resume_step})"
+                      f"{' + optimizer' if resume_opt_path else ' (no optimizer state)'}")
+    if init_ckpt:
         from safetensors.torch import load_file
-        state = {key: value.float() for key, value in load_file(args.init_ckpt).items()}
+        state = {key: value.to(param_dtype) for key, value in load_file(init_ckpt).items()}
         missing, unexpected = model.load_state_dict(state, strict=False)
         assert not unexpected
         assert all(key.startswith("rope_") for key in missing)
@@ -181,17 +361,17 @@ def main():
     adamw = torch.optim.AdamW(adamw_groups, betas=(0.9, 0.95), weight_decay=0.0)
     for g in adamw.param_groups:
         g["base_lr"] = g["lr"]
+    if resume_opt_path:
+        opt_state = torch.load(resume_opt_path, map_location=device, weights_only=False)
+        muon.load_state_dict(opt_state["muon"])
+        adamw.load_state_dict(opt_state["adamw"])
+        print(f"Loaded optimizer state from step {opt_state['step']}")
     total = t["steps"]
     ckpt_at = checkpoint_steps(cfg.get("checkpointing", {}), total)
 
-    wandb_run = None
-    if not args.no_wandb:
-        try:
-            import wandb
-            wandb_run = wandb.init(project=cfg.get("wandb_project", "fogen-phase"),
-                                   name=out.name, config={**cfg, "seed": args.seed})
-        except Exception as e:
-            print(f"wandb disabled: {e}")
+    tracker = create_tracker(
+        {**cfg, "seed": args.seed}, out,
+        use_mlflow=args.mlflow, use_wandb=not args.no_wandb)
 
     probe_log = (out / "probe_log.jsonl").open("a")
     train_log = (out / "train_log.jsonl").open("a")
@@ -203,14 +383,17 @@ def main():
         for a in aggs:
             probe_log.write(json.dumps({"step": step, **a}) + "\n")
         probe_log.flush()
-        if wandb_run:
-            wandb_run.log({f"probe/{a['probe']}/{a['split']}/acc": a["argmax_acc"]
-                           for a in aggs} | {"step": step}, step=step)
+        tracker.log_probes(step, aggs)
         model.train()
 
     model.train()
+    if resume_step > 0:
+        print(f"Fast-forwarding data loader to step {resume_step}...")
+        for skip in range(resume_step):
+            active_loader(skip, loader, loader_b, switch_step).next_batch()
+        print(f"Resumed. Starting from step {resume_step}.")
     t0 = time.time()
-    for step in range(total + 1):
+    for step in range(resume_step, total + 1):
         s = lr_scale(step, total, t.get("warmdown_frac", 0.3))
         wd = t["weight_decay"] * (1 - step / total)  # decay wd to 0
         for g in muon.param_groups:
@@ -219,7 +402,8 @@ def main():
             g["lr"] = g["base_lr"] * s
 
         if step in ckpt_at:
-            save_checkpoint(model, out / "ckpts", step)
+            save_checkpoint(model, out / "ckpts", step, muon, adamw)
+            tracker.log_checkpoint(step)
         pe = cfg["probes"]["every"]
         if step <= cfg["probes"].get("dense_until", 50) or step % pe == 0:
             run_probes(step)
@@ -230,11 +414,37 @@ def main():
         with torch.autocast(device_type=device.split(":")[0], dtype=torch.bfloat16,
                             enabled=(device != "cpu")):
             if (execution_cfg.get("enabled", False)
+                    and execution_cfg.get("strategy") == "random_mask_consistent"):
+                execution_mask = random_execution_mask(
+                    mcfg.n_layer,
+                    execution_cfg.get("parallel_probability", 0.5),
+                    execution_generator,
+                    skip_probability=execution_cfg.get("skip_probability", 0.0))
+                seq_logits = model(x, mode="sequential")
+                mask_logits = model(x, mode=execution_mask)
+                seq_loss = F.cross_entropy(
+                    seq_logits.view(-1, seq_logits.size(-1)), y.reshape(-1))
+                mask_loss = F.cross_entropy(
+                    mask_logits.view(-1, mask_logits.size(-1)), y.reshape(-1))
+                cw = execution_cfg.get("consistency_weight", 0.1)
+                consistency = _compute_consistency(
+                    seq_logits, mask_logits,
+                    execution_cfg.get("consistency_type", "centered_mse"),
+                    temperature=execution_cfg.get("consistency_temperature", 1.0))
+                loss = 0.5 * seq_loss + 0.5 * mask_loss + cw * consistency
+                execution_metrics = {
+                    "sequential_loss": seq_loss,
+                    "mask_loss": mask_loss,
+                    "consistency": consistency,
+                    "consistency_weight": torch.tensor(cw, device=loss.device),
+                }
+            elif (execution_cfg.get("enabled", False)
                     and execution_cfg.get("strategy") == "random_mask"):
                 execution_mask = random_execution_mask(
                     mcfg.n_layer,
                     execution_cfg.get("parallel_probability", 0.5),
-                    execution_generator)
+                    execution_generator,
+                    skip_probability=execution_cfg.get("skip_probability", 0.0))
                 loss = model.loss(x, y, mode=execution_mask)
                 execution_metrics = {
                     "parallel_fraction": torch.tensor(
@@ -242,19 +452,32 @@ def main():
                         device=loss.device)
                 }
             elif execution_cfg.get("enabled", False):
-                current_consistency_weight = consistency_weight(
-                    step, total, execution_cfg)
+                gradnorm_rho = execution_cfg.get("gradnorm_rho")
+                if gradnorm_rho is not None:
+                    current_consistency_weight = _gradnorm_cw(
+                        model, x, y, execution_cfg, gradnorm_rho, step=step)
+                else:
+                    current_consistency_weight = consistency_weight(
+                        step, total, execution_cfg)
+                mem_efficient = execution_cfg.get("memory_efficient", False)
                 loss, execution_metrics = polymorphic_loss(
                     model, x, y,
                     execution_cfg.get("parallel_weight", 0.5),
                     current_consistency_weight,
-                    execution_cfg.get("teacher_detach", False))
+                    execution_cfg.get("teacher_detach", False),
+                    memory_efficient=mem_efficient,
+                    consistency_type=execution_cfg.get(
+                        "consistency_type", "centered_mse"),
+                    temperature=execution_cfg.get(
+                        "consistency_temperature", 1.0))
                 execution_metrics["consistency_weight"] = torch.tensor(
                     current_consistency_weight, device=loss.device)
             else:
                 loss = model.loss(x, y)
                 execution_metrics = None
-        loss.backward()
+        if not (execution_cfg.get("enabled", False)
+                and execution_cfg.get("memory_efficient", False)):
+            loss.backward()
         guard_record = None
         if guard_items and step % guard_cfg.get("every", 1) == 0:
             with torch.autocast(device_type=device.split(":")[0], dtype=torch.bfloat16,
@@ -278,7 +501,7 @@ def main():
 
         if step % 20 == 0:
             rec = {"step": step, "loss": loss.item(),
-                   "tok_s": cfg["batch_seqs"] * mcfg.ctx_len * max(step, 1)
+                   "tok_s": cfg["batch_seqs"] * mcfg.ctx_len * max(step - resume_step, 1)
                             / (time.time() - t0)}
             if guard_record is not None:
                 rec.update({f"guard_{key}": value
@@ -287,12 +510,12 @@ def main():
                 rec.update({f"execution_{key}": value.item()
                             for key, value in execution_metrics.items()})
             train_log.write(json.dumps(rec) + "\n"); train_log.flush()
-            if wandb_run:
-                wandb_run.log({"train/loss": rec["loss"]}, step=step)
+            tracker.log_step(step, rec, execution_metrics, guard_record,
+                             muon_lr=muon.param_groups[0]["lr"],
+                             adamw_lr=adamw.param_groups[0]["lr"])
             print(rec)
 
-    if wandb_run:
-        wandb_run.finish()
+    tracker.finish()
     print(f"done in {(time.time()-t0)/60:.1f} min -> {out}")
 
 

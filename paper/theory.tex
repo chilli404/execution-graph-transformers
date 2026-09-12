@@ -99,18 +99,17 @@ Let the final logit map $h$ be $K_h$-Lipschitz, and define $p_m=\mathrm{softmax}
 For $A(z)=\log\sum_i\exp z_i$, categorical KL is the Bregman divergence $A(z')-A(z)-\nabla A(z)^\top(z'-z)$. The Hessian $\nabla^2A(z)=\mathrm{diag}(p)-pp^\top$ has Euclidean operator norm at most $1/2$, so the divergence is at most $\frac14\|z'-z\|^2$. Apply the Lipschitz bound for $h$ followed by Theorem~\ref{thm:graph-bound}.
 \end{proof}
 
-\paragraph{First-order graph composition.}
-Extend the binary mask to $u\in[0,1]^L$ using $B_l^u(x)=S_l(x)-u_ld_l(x)$. A multivariate Taylor expansion around the all-sequential graph gives
+\paragraph{Why defects compose subadditively.}
+The consistency objective penalizes the all-parallel divergence $D(m_{\mathrm{all}})$ directly but constrains individual layers only through shared parameters. Define the all-parallel ratio
 \begin{equation}
-  z(u)-z(0)=\sum_lu_lv_l+R(u),
-  \qquad \|R(u)\|\le C\|u\|_1^2,
+  \eta \;=\; D(m_{\mathrm{all}})\big/\textstyle\sum_l D(e_l).
+  \label{eq:eta}
 \end{equation}
-where $v_l=\partial z/\partial u_l|_{u=0}$ is the propagated single-layer defect. Quadratic output metrics contain pairwise terms $v_i^THv_j$; weak or negative average cross terms yield approximate additivity or subadditivity. Empirically, across both corpora we find
+When optimization succeeds, $\eta<1$: the whole becomes smaller than the sum of its parts. This is subadditivity. A model trained without the consistency signal has $\eta>1$ (Table~\ref{tab:beta-verification}). From $\eta$ the composition exponent is bounded:
 \begin{equation}
-  D(m)\approx \alpha\sum_{l:m_l=1}D(e_l),
-  \qquad \alpha\in[0.69,0.72].
+  \beta \;\ge\; \log(1/\eta)\,/\,\log L.
+  \label{eq:beta-lower}
 \end{equation}
-The coefficient is an empirical calibration parameter, not a universal constant.
 
 \paragraph{Certificate boundary.}
-Theorems~\ref{thm:exact-defect}--\ref{thm:kl-bound} require segment or trajectory-domain bounds. A defect measured only on a reference prompt is not automatically a uniform $D_l$. Our aggregate graph calibration transfers well across corpora, but prompt-adaptive selection exhibits tail undercoverage on held-out ClimbMix prompts. We therefore use \emph{defect predictor} or \emph{budgeted graph ranker} for the empirical method and reserve \emph{certificate} for settings with validated coverage.
+Theorems~\ref{thm:exact-defect}--\ref{thm:kl-bound} require trajectory-domain bounds. A defect measured on a reference prompt is not automatically a uniform $D_l$. Our aggregate calibration transfers across corpora, but prompt-level selection exhibits tail undercoverage; we use \emph{budgeted graph ranker} and reserve \emph{certificate} for settings with validated coverage.

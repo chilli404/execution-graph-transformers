@@ -1,0 +1,227 @@
+{
+  "n_layers": 20,
+  "baseline_ms": 176.4,
+  "fused_ms": 164.6,
+  "per_layer_skip_ms": 8.8,
+  "skip_order": [
+    14,
+    12,
+    6,
+    4,
+    10,
+    11,
+    15,
+    7,
+    3,
+    8,
+    1,
+    13,
+    5,
+    18,
+    9,
+    16,
+    17,
+    0,
+    2,
+    19
+  ],
+  "skip_costs": [
+    0.07294511068195542,
+    0.023818909893050355,
+    0.10401192642101442,
+    0.02274172714918632,
+    0.0177827898096814,
+    0.033002297832324556,
+    0.01746712959393726,
+    0.022498339854882365,
+    0.02277283786548212,
+    0.04139334592199284,
+    0.020482511049674468,
+    0.02117133686385131,
+    0.017217222414974698,
+    0.028702107905771657,
+    0.015734079052845518,
+    0.0215072521879347,
+    0.04463386986146456,
+    0.06412728180901217,
+    0.0339549073133123,
+    0.19757950834331472
+  ],
+  "compiler_results": [
+    {
+      "n_skip": 0,
+      "selected_layers": [],
+      "predicted_cost": 0.0,
+      "actual_mean_degradation": -0.0306,
+      "best_at_k": -0.0333,
+      "regret": 0.0027,
+      "latency_ms": 164.6,
+      "speedup": 1.07
+    },
+    {
+      "n_skip": 1,
+      "selected_layers": [
+        14
+      ],
+      "predicted_cost": 0.0157,
+      "actual_mean_degradation": -0.0234,
+      "best_at_k": -0.0319,
+      "regret": 0.0085,
+      "latency_ms": 155.7,
+      "speedup": 1.13
+    },
+    {
+      "n_skip": 2,
+      "selected_layers": [
+        12,
+        14
+      ],
+      "predicted_cost": 0.033,
+      "actual_mean_degradation": -0.0148,
+      "best_at_k": -0.0304,
+      "regret": 0.0156,
+      "latency_ms": 146.9,
+      "speedup": 1.2
+    },
+    {
+      "n_skip": 3,
+      "selected_layers": [
+        6,
+        12,
+        14
+      ],
+      "predicted_cost": 0.0504,
+      "actual_mean_degradation": -0.0046,
+      "best_at_k": -0.0279,
+      "regret": 0.0233,
+      "latency_ms": 138.1,
+      "speedup": 1.28
+    },
+    {
+      "n_skip": 4,
+      "selected_layers": [
+        4,
+        6,
+        12,
+        14
+      ],
+      "predicted_cost": 0.0682,
+      "actual_mean_degradation": 0.0084,
+      "best_at_k": -0.0196,
+      "regret": 0.028,
+      "latency_ms": 129.3,
+      "speedup": 1.36
+    },
+    {
+      "n_skip": 5,
+      "selected_layers": [
+        4,
+        6,
+        10,
+        12,
+        14
+      ],
+      "predicted_cost": 0.0887,
+      "actual_mean_degradation": 0.0266,
+      "best_at_k": -0.0115,
+      "regret": 0.0381,
+      "latency_ms": 120.5,
+      "speedup": 1.46
+    },
+    {
+      "n_skip": 6,
+      "selected_layers": [
+        4,
+        6,
+        10,
+        11,
+        12,
+        14
+      ],
+      "predicted_cost": 0.1099,
+      "actual_mean_degradation": 0.0474,
+      "best_at_k": -0.0012,
+      "regret": 0.0485,
+      "latency_ms": 111.6,
+      "speedup": 1.58
+    },
+    {
+      "n_skip": 7,
+      "selected_layers": [
+        4,
+        6,
+        10,
+        11,
+        12,
+        14,
+        15
+      ],
+      "predicted_cost": 0.1314,
+      "actual_mean_degradation": 0.08,
+      "best_at_k": 0.0152,
+      "regret": 0.0648,
+      "latency_ms": 102.8,
+      "speedup": 1.72
+    },
+    {
+      "n_skip": 8,
+      "selected_layers": [
+        4,
+        6,
+        7,
+        10,
+        11,
+        12,
+        14,
+        15
+      ],
+      "predicted_cost": 0.1539,
+      "actual_mean_degradation": 0.1212,
+      "best_at_k": 0.022,
+      "regret": 0.0992,
+      "latency_ms": 94.0,
+      "speedup": 1.88
+    },
+    {
+      "n_skip": 9,
+      "selected_layers": [
+        3,
+        4,
+        6,
+        7,
+        10,
+        11,
+        12,
+        14,
+        15
+      ],
+      "predicted_cost": 0.1766,
+      "actual_mean_degradation": 0.1513,
+      "best_at_k": 0.0586,
+      "regret": 0.0927,
+      "latency_ms": 85.2,
+      "speedup": 2.07
+    },
+    {
+      "n_skip": 10,
+      "selected_layers": [
+        3,
+        4,
+        6,
+        7,
+        8,
+        10,
+        11,
+        12,
+        14,
+        15
+      ],
+      "predicted_cost": 0.1994,
+      "actual_mean_degradation": 0.2257,
+      "best_at_k": 0.1461,
+      "regret": 0.0797,
+      "latency_ms": 76.3,
+      "speedup": 2.31
+    }
+  ]
+}
