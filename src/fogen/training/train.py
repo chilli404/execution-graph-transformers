@@ -88,12 +88,15 @@ def _gradnorm_cw(model, x, y, execution_cfg, rho, step=0):
         return sum(g.detach().float().norm().item() ** 2
                    for g in grads if g is not None) ** 0.5
 
-    # Separate forward passes to avoid OOM from retain_graph at 3B+
-    print(f"  [gradnorm] LM fwd+grad...", flush=True)
+    # Use a small batch slice for gradient measurement to avoid OOM at 3B+
+    gn_batch = min(2, x.size(0))
+    x_gn, y_gn = x[:gn_batch], y[:gn_batch]
+
+    print(f"  [gradnorm] LM fwd+grad (batch={gn_batch})...", flush=True)
     with torch.autocast(device_type=x.device.type, dtype=torch.bfloat16,
                         enabled=x.device.type != "cpu"):
-        seq_logits = model(x, mode="sequential", gradient_checkpointing=True)
-        par_logits = model(x, mode="parallel", gradient_checkpointing=True)
+        seq_logits = model(x_gn, mode="sequential", gradient_checkpointing=True)
+        par_logits = model(x_gn, mode="parallel", gradient_checkpointing=True)
         lm_loss = (
             (1 - pw) * F.cross_entropy(
                 seq_logits.view(-1, seq_logits.size(-1)), y.reshape(-1))
@@ -103,11 +106,11 @@ def _gradnorm_cw(model, x, y, execution_cfg, rho, step=0):
     del seq_logits, par_logits, lm_loss
     model.zero_grad(set_to_none=True)
 
-    print(f"  [gradnorm] con fwd+grad...", flush=True)
+    print(f"  [gradnorm] con fwd+grad (batch={gn_batch})...", flush=True)
     with torch.autocast(device_type=x.device.type, dtype=torch.bfloat16,
                         enabled=x.device.type != "cpu"):
-        seq_logits = model(x, mode="sequential", gradient_checkpointing=True)
-        par_logits = model(x, mode="parallel", gradient_checkpointing=True)
+        seq_logits = model(x_gn, mode="sequential", gradient_checkpointing=True)
+        par_logits = model(x_gn, mode="parallel", gradient_checkpointing=True)
         con_loss = _compute_consistency(
             seq_logits, par_logits, con_type,
             teacher_detach=td, temperature=con_temp)
