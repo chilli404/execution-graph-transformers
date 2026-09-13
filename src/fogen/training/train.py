@@ -426,7 +426,11 @@ def main():
                     seq_logits.view(-1, seq_logits.size(-1)), y.reshape(-1))
                 mask_loss = F.cross_entropy(
                     mask_logits.view(-1, mask_logits.size(-1)), y.reshape(-1))
-                cw = execution_cfg.get("consistency_weight", 0.1)
+                gradnorm_rho = execution_cfg.get("gradnorm_rho")
+                if gradnorm_rho is not None:
+                    cw = _gradnorm_cw(model, x, y, execution_cfg, gradnorm_rho, step=step)
+                else:
+                    cw = execution_cfg.get("consistency_weight", 0.1)
                 consistency = _compute_consistency(
                     seq_logits, mask_logits,
                     execution_cfg.get("consistency_type", "centered_mse"),
