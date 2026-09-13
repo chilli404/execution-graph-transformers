@@ -62,6 +62,37 @@ def random_execution_mask(n_layers, parallel_probability, generator,
 _gradnorm_cache = {"cw": 0.1, "step": -1}
 
 
+def _gradnorm_cw_inline(model, lm_loss, con_loss, rho, step=0):
+    """Compute gradient-normalized cw by reusing the training forward pass.
+
+    Takes already-computed lm_loss and con_loss from the training step,
+    measures their gradient norms via retain_graph, and returns the ratio.
+    Zero additional forward passes — only two backward passes on the
+    existing computation graph.
+    """
+    every = _gradnorm_cache.get("every", 100)
+    if step > 0 and (step - _gradnorm_cache["step"]) < every:
+        return _gradnorm_cache["cw"]
+
+    params = [p for p in model.parameters() if p.requires_grad]
+
+    def _grad_norm(loss, retain=False):
+        grads = torch.autograd.grad(loss, params, retain_graph=retain, allow_unused=True)
+        return sum(g.detach().float().norm().item() ** 2
+                   for g in grads if g is not None) ** 0.5
+
+    norm_lm = _grad_norm(lm_loss, retain=True)
+    norm_con = _grad_norm(con_loss, retain=True)
+
+    cw = float(rho * norm_lm / max(norm_con, 1e-8))
+    cw = max(1e-4, min(cw, 10.0))
+    _gradnorm_cache["cw"] = cw
+    _gradnorm_cache["step"] = step
+    print(f"  [gradnorm-inline] ||∇LM||={norm_lm:.4f} ||∇con||={norm_con:.4f} cw={cw:.4f}",
+          flush=True)
+    return cw
+
+
 def _gradnorm_cw(model, x, y, execution_cfg, rho, step=0):
     """Compute gradient-normalized consistency weight: cw = ρ * ||∇LM|| / ||∇con||.
 
@@ -429,15 +460,17 @@ def main():
                     seq_logits.view(-1, seq_logits.size(-1)), y.reshape(-1))
                 mask_loss = F.cross_entropy(
                     mask_logits.view(-1, mask_logits.size(-1)), y.reshape(-1))
-                gradnorm_rho = execution_cfg.get("gradnorm_rho")
-                if gradnorm_rho is not None:
-                    cw = _gradnorm_cw(model, x, y, execution_cfg, gradnorm_rho, step=step)
-                else:
-                    cw = execution_cfg.get("consistency_weight", 0.1)
                 consistency = _compute_consistency(
                     seq_logits, mask_logits,
                     execution_cfg.get("consistency_type", "centered_mse"),
                     temperature=execution_cfg.get("consistency_temperature", 1.0))
+                gradnorm_rho = execution_cfg.get("gradnorm_rho")
+                if gradnorm_rho is not None:
+                    cw = _gradnorm_cw_inline(
+                        model, 0.5 * seq_loss + 0.5 * mask_loss, consistency,
+                        gradnorm_rho, step=step)
+                else:
+                    cw = execution_cfg.get("consistency_weight", 0.1)
                 loss = 0.5 * seq_loss + 0.5 * mask_loss + cw * consistency
                 execution_metrics = {
                     "sequential_loss": seq_loss,
