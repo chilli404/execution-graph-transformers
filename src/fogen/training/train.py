@@ -492,6 +492,14 @@ def main():
                     execution_cfg.get("parallel_probability", 0.5),
                     execution_generator,
                     skip_probability=execution_cfg.get("skip_probability", 0.0))
+                # Measure gradnorm BEFORE training forward pass to avoid OOM
+                gradnorm_rho = execution_cfg.get("gradnorm_rho")
+                if gradnorm_rho is not None:
+                    cw = _gradnorm_cw_inline(
+                        model, x, y, execution_mask, execution_cfg,
+                        gradnorm_rho, step=step)
+                else:
+                    cw = execution_cfg.get("consistency_weight", 0.1)
                 seq_logits = model(x, mode="sequential")
                 mask_logits = model(x, mode=execution_mask)
                 seq_loss = F.cross_entropy(
@@ -502,13 +510,6 @@ def main():
                     seq_logits, mask_logits,
                     execution_cfg.get("consistency_type", "centered_mse"),
                     temperature=execution_cfg.get("consistency_temperature", 1.0))
-                gradnorm_rho = execution_cfg.get("gradnorm_rho")
-                if gradnorm_rho is not None:
-                    cw = _gradnorm_cw_inline(
-                        model, x, y, execution_mask, execution_cfg,
-                        gradnorm_rho, step=step)
-                else:
-                    cw = execution_cfg.get("consistency_weight", 0.1)
                 loss = 0.5 * seq_loss + 0.5 * mask_loss + cw * consistency
                 execution_metrics = {
                     "sequential_loss": seq_loss,
