@@ -62,46 +62,66 @@ def random_execution_mask(n_layers, parallel_probability, generator,
 _gradnorm_cache = {"cw": 0.1, "step": -1}
 
 
-def _gradnorm_cw_inline(model, lm_loss, con_loss, rho, step=0):
-    """Compute gradient-normalized cw by reusing the training forward pass.
+def _gradnorm_cw_inline(model, x, y, execution_mask, execution_cfg, rho, step=0):
+    """Exact gradient-normalized cw for random_mask_consistent.
 
-    Measures ||∇con|| via a single backward (no retain_graph — the training
-    step will recompute what it needs). Estimates ||∇LM|| from the loss ratio:
-    at step 0 we measure ||∇con|| and use ||∇LM|| ≈ rho_target * ||∇con|| / rho
-    bootstrapped from the loss magnitudes. After step 0, scales cw by the
-    con_loss ratio as a proxy.
+    Same approach as _gradnorm_cw but for the ternary consistent branch:
+    separate forward passes with batch=1 and gradient checkpointing.
 
-    This avoids retain_graph entirely, preventing OOM at 3B+.
+      LM  = 0.5 * CE(seq) + 0.5 * CE(mask)
+      con = consistency(seq_logits, mask_logits)
+
+    Only recomputes every gradnorm_every steps (default 100).
     """
-    every = _gradnorm_cache.get("every", 100)
+    every = execution_cfg.get("gradnorm_every", 100)
     if step > 0 and (step - _gradnorm_cache["step"]) < every:
         return _gradnorm_cache["cw"]
 
-    lm_val = float(lm_loss.detach()) if lm_loss is not None else _gradnorm_cache.get("base_lm_loss", 1.0)
-    con_val = float(con_loss.detach())
+    print(f"  [gradnorm-ternary] computing at step {step}...", flush=True)
+    params = [p for p in model.parameters() if p.requires_grad]
+    con_type = execution_cfg.get("consistency_type", "centered_mse")
+    con_temp = execution_cfg.get("consistency_temperature", 1.0)
 
-    if "base_cw" not in _gradnorm_cache:
-        # First call: use loss-value ratio as initial estimate
-        # cw = rho * (lm_val / max(con_val, 1e-8)) is the loss-scale proxy
-        # This approximates the gradient ratio when both losses use similar
-        # parameter sensitivities (true for same-model seq/par forward passes)
-        cw = float(rho * lm_val / max(con_val, 1e-8))
-        cw = max(1e-4, min(cw, 10.0))
-        _gradnorm_cache["base_cw"] = cw
-        _gradnorm_cache["base_con_loss"] = con_val
-        _gradnorm_cache["base_lm_loss"] = lm_val
-        print(f"  [gradnorm-inline] lm={lm_val:.4f} con={con_val:.4f} cw={cw:.4f}",
-              flush=True)
-    else:
-        base_cw = _gradnorm_cache["base_cw"]
-        base_con = _gradnorm_cache["base_con_loss"]
-        scale = (base_con / max(con_val, 1e-12)) ** 0.5
-        cw = max(1e-4, min(base_cw * scale, 10.0))
-        print(f"  [gradnorm-inline] proxy cw={cw:.4f} (base={base_cw:.4f} scale={scale:.3f})",
-              flush=True)
+    def _grad_norm(loss):
+        grads = torch.autograd.grad(loss, params, allow_unused=True)
+        return sum(g.detach().float().norm().item() ** 2
+                   for g in grads if g is not None) ** 0.5
 
+    gn_batch = min(1, x.size(0))
+    x_gn, y_gn = x[:gn_batch], y[:gn_batch]
+
+    # LM gradient: separate fwd+bwd, then free
+    print(f"  [gradnorm-ternary] LM fwd+grad (batch={gn_batch})...", flush=True)
+    with torch.autocast(device_type=x.device.type, dtype=torch.bfloat16,
+                        enabled=x.device.type != "cpu"):
+        seq_logits = model(x_gn, mode="sequential", gradient_checkpointing=True)
+        mask_logits = model(x_gn, mode=execution_mask, gradient_checkpointing=True)
+        lm_loss = 0.5 * F.cross_entropy(
+            seq_logits.view(-1, seq_logits.size(-1)), y_gn.reshape(-1)) + \
+            0.5 * F.cross_entropy(
+            mask_logits.view(-1, mask_logits.size(-1)), y_gn.reshape(-1))
+    norm_lm = _grad_norm(lm_loss)
+    del seq_logits, mask_logits, lm_loss
+    model.zero_grad(set_to_none=True)
+
+    # Consistency gradient: separate fwd+bwd, then free
+    print(f"  [gradnorm-ternary] con fwd+grad (batch={gn_batch})...", flush=True)
+    with torch.autocast(device_type=x.device.type, dtype=torch.bfloat16,
+                        enabled=x.device.type != "cpu"):
+        seq_logits = model(x_gn, mode="sequential", gradient_checkpointing=True)
+        mask_logits = model(x_gn, mode=execution_mask, gradient_checkpointing=True)
+        con_loss = _compute_consistency(
+            seq_logits, mask_logits, con_type, temperature=con_temp)
+    norm_con = _grad_norm(con_loss)
+    del seq_logits, mask_logits, con_loss
+    model.zero_grad(set_to_none=True)
+
+    cw = float(rho * norm_lm / max(norm_con, 1e-8))
+    cw = max(1e-4, min(cw, 10.0))
     _gradnorm_cache["cw"] = cw
     _gradnorm_cache["step"] = step
+    print(f"  [gradnorm-ternary] ||∇LM||={norm_lm:.4f} ||∇con||={norm_con:.4f} cw={cw:.4f}",
+          flush=True)
     return cw
 
 
@@ -479,7 +499,7 @@ def main():
                 gradnorm_rho = execution_cfg.get("gradnorm_rho")
                 if gradnorm_rho is not None:
                     cw = _gradnorm_cw_inline(
-                        model, 0.5 * seq_loss + 0.5 * mask_loss, consistency,
+                        model, x, y, execution_mask, execution_cfg,
                         gradnorm_rho, step=step)
                 else:
                     cw = execution_cfg.get("consistency_weight", 0.1)
