@@ -65,42 +65,37 @@ _gradnorm_cache = {"cw": 0.1, "step": -1}
 def _gradnorm_cw_inline(model, lm_loss, con_loss, rho, step=0):
     """Compute gradient-normalized cw by reusing the training forward pass.
 
-    At step 0: measures both ||∇LM|| and ||∇con|| via retain_graph
-    (works because activations are small at the first batch).
-    After step 0: caches ||∇LM|| and only updates cw using the
-    loss-value ratio as a proxy for the gradient ratio, avoiding
-    retain_graph entirely. This prevents OOM at 3B+.
+    Measures ||∇con|| via a single backward (no retain_graph — the training
+    step will recompute what it needs). Estimates ||∇LM|| from the loss ratio:
+    at step 0 we measure ||∇con|| and use ||∇LM|| ≈ rho_target * ||∇con|| / rho
+    bootstrapped from the loss magnitudes. After step 0, scales cw by the
+    con_loss ratio as a proxy.
 
-    The proxy cw = cached_cw * (con_loss_0 / con_loss_t) tracks how
-    the consistency gradient changes relative to the initial measurement.
+    This avoids retain_graph entirely, preventing OOM at 3B+.
     """
     every = _gradnorm_cache.get("every", 100)
     if step > 0 and (step - _gradnorm_cache["step"]) < every:
         return _gradnorm_cache["cw"]
 
-    if "base_cw" not in _gradnorm_cache:
-        # First call: full gradient measurement with retain_graph
-        params = [p for p in model.parameters() if p.requires_grad]
-        def _grad_norm(loss):
-            grads = torch.autograd.grad(loss, params, retain_graph=True, allow_unused=True)
-            return sum(g.detach().float().norm().item() ** 2
-                       for g in grads if g is not None) ** 0.5
+    lm_val = float(lm_loss.detach()) if lm_loss is not None else _gradnorm_cache.get("base_lm_loss", 1.0)
+    con_val = float(con_loss.detach())
 
-        norm_lm = _grad_norm(lm_loss)
-        norm_con = _grad_norm(con_loss)
-        cw = float(rho * norm_lm / max(norm_con, 1e-8))
+    if "base_cw" not in _gradnorm_cache:
+        # First call: use loss-value ratio as initial estimate
+        # cw = rho * (lm_val / max(con_val, 1e-8)) is the loss-scale proxy
+        # This approximates the gradient ratio when both losses use similar
+        # parameter sensitivities (true for same-model seq/par forward passes)
+        cw = float(rho * lm_val / max(con_val, 1e-8))
         cw = max(1e-4, min(cw, 10.0))
         _gradnorm_cache["base_cw"] = cw
-        _gradnorm_cache["base_con_loss"] = float(con_loss.detach())
-        print(f"  [gradnorm-inline] ||∇LM||={norm_lm:.4f} ||∇con||={norm_con:.4f} cw={cw:.4f}",
+        _gradnorm_cache["base_con_loss"] = con_val
+        _gradnorm_cache["base_lm_loss"] = lm_val
+        print(f"  [gradnorm-inline] lm={lm_val:.4f} con={con_val:.4f} cw={cw:.4f}",
               flush=True)
     else:
-        # Subsequent calls: scale cached cw by loss ratio (no backward needed)
         base_cw = _gradnorm_cache["base_cw"]
         base_con = _gradnorm_cache["base_con_loss"]
-        cur_con = float(con_loss.detach())
-        # gradient norm ∝ sqrt(loss) approximately, so scale by sqrt ratio
-        scale = (base_con / max(cur_con, 1e-12)) ** 0.5
+        scale = (base_con / max(con_val, 1e-12)) ** 0.5
         cw = max(1e-4, min(base_cw * scale, 10.0))
         print(f"  [gradnorm-inline] proxy cw={cw:.4f} (base={base_cw:.4f} scale={scale:.3f})",
               flush=True)

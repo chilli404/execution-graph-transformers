@@ -1,7 +1,7 @@
-"""Test that _gradnorm_cw_inline produces equivalent results to _gradnorm_cw.
+"""Test _gradnorm_cw_inline: loss-ratio proxy for gradient-normalized cw.
 
-The inline version reuses losses from the training forward pass,
-while the original does separate forward passes.
+The inline version uses loss magnitudes as a proxy for gradient norms,
+avoiding all backward passes. This is memory-safe at any scale.
 """
 from __future__ import annotations
 
@@ -12,7 +12,6 @@ from fogen.model import GPT, ModelConfig
 from fogen.training.train import (
     _compute_consistency,
     _gradnorm_cache,
-    _gradnorm_cw,
     _gradnorm_cw_inline,
 )
 
@@ -32,76 +31,73 @@ def _make_batch(cfg, batch=4):
 
 
 def _train_diverged(model, cfg, steps=50):
-    """Train with ONLY seq loss so par logits diverge from seq."""
+    """Train with polymorphic loss so consistency is non-trivial."""
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-2)
     for _ in range(steps):
         x, y = _make_batch(cfg)
         seq_logits = model(x, mode="sequential")
-        loss = F.cross_entropy(seq_logits.view(-1, seq_logits.size(-1)), y.reshape(-1))
+        par_logits = model(x, mode="parallel")
+        seq_loss = F.cross_entropy(seq_logits.view(-1, seq_logits.size(-1)), y.reshape(-1))
+        par_loss = F.cross_entropy(par_logits.view(-1, par_logits.size(-1)), y.reshape(-1))
+        consistency = _compute_consistency(seq_logits, par_logits, "centered_mse")
+        loss = 0.5 * seq_loss + 0.5 * par_loss + consistency
         loss.backward()
         optimizer.step()
         optimizer.zero_grad()
 
 
-def test_inline_exact_match_same_batch():
-    """With batch=2, both methods use the full batch and should match exactly."""
+def test_inline_produces_valid_cw():
+    """Step 0 should produce a valid, non-degenerate cw from loss ratio."""
     torch.manual_seed(42)
     model, cfg = _make_tiny_model()
     _train_diverged(model, cfg, steps=50)
-
-    x, y = _make_batch(cfg, batch=2)
-
-    # Verify consistency is actually non-zero
-    with torch.no_grad():
-        s = model(x, mode="sequential")
-        p = model(x, mode="parallel")
-        con_check = _compute_consistency(s, p, "centered_mse")
-        print(f"  consistency={float(con_check):.6f}")
-        assert float(con_check) > 1e-6, "consistency too small to test gradnorm"
+    x, y = _make_batch(cfg)
 
     rho = 0.2
-    execution_cfg = {
-        "enabled": True,
-        "parallel_weight": 0.5,
-        "consistency_type": "centered_mse",
-        "gradnorm_rho": rho,
-        "gradnorm_every": 1,
-    }
-
-    # Original: uses gn_batch=min(2, batch)=2, so full batch
-    _gradnorm_cache.clear()
-    _gradnorm_cache.update({"cw": 0.1, "step": -100})
-    cw_original = _gradnorm_cw(model, x, y, execution_cfg, rho, step=0)
-    model.zero_grad(set_to_none=True)
-
-    # Inline: uses full batch
     _gradnorm_cache.clear()
     _gradnorm_cache.update({"cw": 0.1, "step": -100})
 
     seq_logits = model(x, mode="sequential")
     par_logits = model(x, mode="parallel")
-    seq_loss = F.cross_entropy(seq_logits.view(-1, seq_logits.size(-1)), y.reshape(-1))
-    par_loss = F.cross_entropy(par_logits.view(-1, par_logits.size(-1)), y.reshape(-1))
-    lm_loss = 0.5 * seq_loss + 0.5 * par_loss
+    lm_loss = 0.5 * F.cross_entropy(seq_logits.view(-1, seq_logits.size(-1)), y.reshape(-1)) + \
+              0.5 * F.cross_entropy(par_logits.view(-1, par_logits.size(-1)), y.reshape(-1))
     consistency = _compute_consistency(seq_logits, par_logits, "centered_mse")
 
-    cw_inline = _gradnorm_cw_inline(model, lm_loss, consistency, rho, step=0)
-    model.zero_grad(set_to_none=True)
+    cw = _gradnorm_cw_inline(model, lm_loss, consistency, rho, step=0)
 
-    print(f"  cw_original={cw_original:.6f}  cw_inline={cw_inline:.6f}")
-
-    assert 1e-4 < cw_original < 10.0, f"original cw={cw_original} degenerate"
-    assert 1e-4 < cw_inline < 10.0, f"inline cw={cw_inline} degenerate"
-
-    # Both compute ρ * ||∇LM|| / ||∇con|| on the same batch
-    # Original does separate fwd but same model/data → same gradient norms
-    rel_diff = abs(cw_original - cw_inline) / max(cw_original, 1e-8)
-    assert rel_diff < 0.05, \
-        f"original={cw_original:.6f} inline={cw_inline:.6f} differ by {rel_diff:.1%}"
+    print(f"  lm={float(lm_loss):.4f} con={float(consistency):.6f} cw={cw:.4f}")
+    assert 1e-4 <= cw <= 10.0, f"cw={cw} out of bounds"
+    assert "base_cw" in _gradnorm_cache
+    assert "base_con_loss" in _gradnorm_cache
 
 
-def test_inline_caches_and_uses_proxy():
-    """After step 0, inline should use proxy scaling, not gradients."""
+def test_inline_no_backward_needed():
+    """The inline method should work with no_grad / detached tensors."""
+    torch.manual_seed(42)
+    model, cfg = _make_tiny_model()
+    _train_diverged(model, cfg, steps=50)
+    x, y = _make_batch(cfg)
+
+    rho = 0.2
+    _gradnorm_cache.clear()
+    _gradnorm_cache.update({"cw": 0.1, "step": -100})
+
+    # Step 0 with regular tensors
+    with torch.no_grad():
+        seq_logits = model(x, mode="sequential")
+        par_logits = model(x, mode="parallel")
+    lm_loss = 0.5 * F.cross_entropy(seq_logits.view(-1, seq_logits.size(-1)), y.reshape(-1)) + \
+              0.5 * F.cross_entropy(par_logits.view(-1, par_logits.size(-1)), y.reshape(-1))
+    consistency = _compute_consistency(seq_logits, par_logits, "centered_mse")
+
+    # Should work fine — only uses .detach() on losses
+    cw = _gradnorm_cw_inline(model, lm_loss, consistency, rho, step=0)
+    assert 1e-4 <= cw <= 10.0
+    print(f"  cw={cw:.4f} (no grad context)")
+
+
+def test_inline_proxy_scales_with_consistency():
+    """After step 0, cw should scale inversely with sqrt(con_loss)."""
     torch.manual_seed(42)
     model, cfg = _make_tiny_model()
     _train_diverged(model, cfg, steps=50)
@@ -118,22 +114,16 @@ def test_inline_caches_and_uses_proxy():
     consistency = _compute_consistency(seq_logits, par_logits, "centered_mse")
 
     cw0 = _gradnorm_cw_inline(model, lm_loss, consistency, rho, step=0)
-    assert "base_cw" in _gradnorm_cache
-    base_cw = _gradnorm_cache["base_cw"]
-    print(f"  base_cw={base_cw:.6f}")
+    base_con = _gradnorm_cache["base_con_loss"]
 
-    # Step 100: proxy call — should work with detached losses (no backward)
-    model.zero_grad(set_to_none=True)
-    with torch.no_grad():
-        seq2 = model(x, mode="sequential")
-        par2 = model(x, mode="parallel")
-    consistency2 = _compute_consistency(seq2, par2, "centered_mse")
+    # Step 100: if consistency drops by 4x, cw should increase by ~2x (sqrt)
+    fake_con = torch.tensor(base_con / 4.0)
+    cw100 = _gradnorm_cw_inline(model, None, fake_con, rho, step=100)
+    expected_scale = (base_con / (base_con / 4.0)) ** 0.5  # = 2.0
+    expected_cw = min(cw0 * expected_scale, 10.0)
 
-    cw100 = _gradnorm_cw_inline(model, None, consistency2, rho, step=100)
-    assert cw100 > 0
-    assert cw100 < 10.0
-    assert _gradnorm_cache["base_cw"] == base_cw
-    print(f"  proxy_cw={cw100:.6f}")
+    print(f"  cw0={cw0:.4f} cw100={cw100:.4f} expected={expected_cw:.4f}")
+    assert abs(cw100 - expected_cw) < 0.01, f"proxy scaling wrong: {cw100} vs {expected_cw}"
 
 
 def test_inline_skips_between_every():
@@ -159,14 +149,42 @@ def test_inline_skips_between_every():
     print(f"  cw0={cw0:.6f} cw50={cw50:.6f} (same)")
 
 
-if __name__ == "__main__":
-    test_inline_exact_match_same_batch()
-    print("PASS: inline matches original exactly (same batch)")
+def test_inline_cw_proportional_to_rho():
+    """cw should be proportional to rho when not clamped."""
+    torch.manual_seed(42)
+    model, cfg = _make_tiny_model()
 
-    test_inline_caches_and_uses_proxy()
-    print("PASS: caches base_cw and uses proxy")
+    # Use balanced fake losses to avoid clamping
+    fake_lm = torch.tensor(3.0)
+    fake_con = torch.tensor(3.0)  # Equal losses → cw ≈ rho
+
+    _gradnorm_cache.clear()
+    _gradnorm_cache.update({"cw": 0.1, "step": -100})
+    cw_02 = _gradnorm_cw_inline(model, fake_lm, fake_con, rho=0.2, step=0)
+
+    _gradnorm_cache.clear()
+    _gradnorm_cache.update({"cw": 0.1, "step": -100})
+    cw_04 = _gradnorm_cw_inline(model, fake_lm, fake_con, rho=0.4, step=0)
+
+    ratio = cw_04 / cw_02
+    print(f"  cw(0.2)={cw_02:.4f} cw(0.4)={cw_04:.4f} ratio={ratio:.3f}")
+    assert 1.9 < ratio < 2.1, f"cw should double when rho doubles, got ratio={ratio:.3f}"
+
+
+if __name__ == "__main__":
+    test_inline_produces_valid_cw()
+    print("PASS: produces valid cw")
+
+    test_inline_no_backward_needed()
+    print("PASS: no backward needed")
+
+    test_inline_proxy_scales_with_consistency()
+    print("PASS: proxy scales correctly")
 
     test_inline_skips_between_every()
     print("PASS: skips between every intervals")
+
+    test_inline_cw_proportional_to_rho()
+    print("PASS: cw proportional to rho")
 
     print("\nAll tests passed.")
