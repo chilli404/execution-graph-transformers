@@ -87,7 +87,7 @@ def _gradnorm_cw_inline(model, x, y, execution_mask, execution_cfg, rho, step=0)
         return sum(g.detach().float().norm().item() ** 2
                    for g in grads if g is not None) ** 0.5
 
-    gn_batch = min(1, x.size(0))
+    gn_batch = min(2, x.size(0))
     x_gn, y_gn = x[:gn_batch], y[:gn_batch]
 
     # LM gradient: separate fwd+bwd, then free
@@ -118,10 +118,16 @@ def _gradnorm_cw_inline(model, x, y, execution_mask, execution_cfg, rho, step=0)
 
     cw = float(rho * norm_lm / max(norm_con, 1e-8))
     cw = max(1e-4, min(cw, 10.0))
-    _gradnorm_cache["cw"] = cw
+    # If con gradient is negligible (<1% of LM), measurement is noise — keep previous
+    if norm_con < 0.01 * norm_lm and _gradnorm_cache["step"] >= 0:
+        cw = _gradnorm_cache["cw"]
+        print(f"  [gradnorm-ternary] ||∇LM||={norm_lm:.4f} ||∇con||={norm_con:.4f} (noise, keeping cw={cw:.4f})",
+              flush=True)
+    else:
+        _gradnorm_cache["cw"] = cw
+        print(f"  [gradnorm-ternary] ||∇LM||={norm_lm:.4f} ||∇con||={norm_con:.4f} cw={cw:.4f}",
+              flush=True)
     _gradnorm_cache["step"] = step
-    print(f"  [gradnorm-ternary] ||∇LM||={norm_lm:.4f} ||∇con||={norm_con:.4f} cw={cw:.4f}",
-          flush=True)
     return cw
 
 
