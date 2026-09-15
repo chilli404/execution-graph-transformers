@@ -502,24 +502,52 @@ def main():
                         gradnorm_rho, step=step)
                 else:
                     cw = execution_cfg.get("consistency_weight", 0.1)
-                use_gc = execution_cfg.get("memory_efficient", False)
-                seq_logits = model(x, mode="sequential", gradient_checkpointing=use_gc)
-                mask_logits = model(x, mode=execution_mask, gradient_checkpointing=use_gc)
-                seq_loss = F.cross_entropy(
-                    seq_logits.view(-1, seq_logits.size(-1)), y.reshape(-1))
-                mask_loss = F.cross_entropy(
-                    mask_logits.view(-1, mask_logits.size(-1)), y.reshape(-1))
-                consistency = _compute_consistency(
-                    seq_logits, mask_logits,
-                    execution_cfg.get("consistency_type", "centered_mse"),
-                    temperature=execution_cfg.get("consistency_temperature", 1.0))
-                loss = 0.5 * seq_loss + 0.5 * mask_loss + cw * consistency
-                execution_metrics = {
-                    "sequential_loss": seq_loss,
-                    "mask_loss": mask_loss,
-                    "consistency": consistency,
-                    "consistency_weight": torch.tensor(cw, device=loss.device),
-                }
+                con_type = execution_cfg.get("consistency_type", "centered_mse")
+                con_temp = execution_cfg.get("consistency_temperature", 1.0)
+                if execution_cfg.get("memory_efficient", False):
+                    # Separate fwd+bwd: one graph alive at a time (fits 7B on 96GB)
+                    seq_logits = model(x, mode="sequential", gradient_checkpointing=True)
+                    seq_loss = F.cross_entropy(
+                        seq_logits.view(-1, seq_logits.size(-1)), y.reshape(-1))
+                    (0.5 * seq_loss).backward()
+                    seq_logits_detached = seq_logits.detach()
+                    seq_loss_val = seq_loss.detach()
+                    del seq_logits, seq_loss
+
+                    mask_logits = model(x, mode=execution_mask, gradient_checkpointing=True)
+                    mask_loss = F.cross_entropy(
+                        mask_logits.view(-1, mask_logits.size(-1)), y.reshape(-1))
+                    consistency = _compute_consistency(
+                        seq_logits_detached, mask_logits, con_type,
+                        teacher_detach=True, temperature=con_temp)
+                    (0.5 * mask_loss + cw * consistency).backward()
+                    mask_loss_val = mask_loss.detach()
+                    consistency_val = consistency.detach()
+                    del mask_logits, mask_loss, consistency
+
+                    loss = 0.5 * seq_loss_val + 0.5 * mask_loss_val + cw * consistency_val
+                    execution_metrics = {
+                        "sequential_loss": seq_loss_val,
+                        "mask_loss": mask_loss_val,
+                        "consistency": consistency_val,
+                        "consistency_weight": torch.tensor(cw, device=loss.device),
+                    }
+                else:
+                    seq_logits = model(x, mode="sequential")
+                    mask_logits = model(x, mode=execution_mask)
+                    seq_loss = F.cross_entropy(
+                        seq_logits.view(-1, seq_logits.size(-1)), y.reshape(-1))
+                    mask_loss = F.cross_entropy(
+                        mask_logits.view(-1, mask_logits.size(-1)), y.reshape(-1))
+                    consistency = _compute_consistency(
+                        seq_logits, mask_logits, con_type, temperature=con_temp)
+                    loss = 0.5 * seq_loss + 0.5 * mask_loss + cw * consistency
+                    execution_metrics = {
+                        "sequential_loss": seq_loss,
+                        "mask_loss": mask_loss,
+                        "consistency": consistency,
+                        "consistency_weight": torch.tensor(cw, device=loss.device),
+                    }
             elif (execution_cfg.get("enabled", False)
                     and execution_cfg.get("strategy") == "random_mask"):
                 execution_mask = random_execution_mask(
