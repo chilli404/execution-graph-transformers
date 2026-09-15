@@ -9,7 +9,7 @@ model:
   ctx_len: 1024
   execution_mode: sequential
 
-batch_seqs: 4
+batch_seqs: 2
 
 train:
   bf16_params: true
@@ -36,7 +36,7 @@ execution_training:
   parallel_probability: 0.4
   skip_probability: 0.1
   gradnorm_rho: 0.2
-  memory_efficient: true
+  memory_efficient: false
 
 checkpointing:
   ckpt_every: 12000
