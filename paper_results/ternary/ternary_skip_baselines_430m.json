@@ -1,0 +1,623 @@
+{
+  "checkpoint": "/mnt/mldata/checkpoints/execution_graph_transformers/430m_ternary_gradnorm/ckpts/step012000.safetensors",
+  "n_layers": 20,
+  "seq_bpb": 4.35391,
+  "seq_latency_ms": 181.87,
+  "skip_costs": [
+    0.01819,
+    -0.00409,
+    -0.00485,
+    -0.1037,
+    -0.07514,
+    -0.00976,
+    0.00354,
+    0.11123,
+    0.12945,
+    0.05011,
+    0.01359,
+    0.06994,
+    0.05125,
+    -0.00814,
+    0.0286,
+    -0.00643,
+    -0.00092,
+    0.04808,
+    0.01248,
+    -0.00594
+  ],
+  "greedy_order": [
+    3,
+    4,
+    5,
+    13,
+    15,
+    19,
+    2,
+    1,
+    16,
+    6,
+    18,
+    10,
+    0,
+    14,
+    17,
+    9,
+    12,
+    11,
+    7,
+    8
+  ],
+  "results": [
+    {
+      "n_skip": 1,
+      "greedy": {
+        "indices": [
+          3
+        ],
+        "delta_bpb": 0.10226,
+        "bpb": 4.45618,
+        "latency_ms": 161.06,
+        "speedup": 1.129
+      },
+      "first_n": {
+        "indices": [
+          0
+        ],
+        "delta_bpb": 0.02448,
+        "bpb": 4.3784,
+        "latency_ms": 161.58,
+        "speedup": 1.126
+      },
+      "last_n": {
+        "indices": [
+          19
+        ],
+        "delta_bpb": 0.16589,
+        "bpb": 4.51981,
+        "latency_ms": 161.59,
+        "speedup": 1.126
+      },
+      "middle_n": {
+        "indices": [
+          10
+        ],
+        "delta_bpb": 0.13565,
+        "bpb": 4.48956,
+        "latency_ms": 161.91,
+        "speedup": 1.123
+      },
+      "evens_first": {
+        "indices": [
+          0
+        ],
+        "delta_bpb": 0.0861,
+        "bpb": 4.44001,
+        "latency_ms": 162.25,
+        "speedup": 1.121
+      },
+      "random": {
+        "mean_delta_bpb": 0.09099,
+        "std_delta_bpb": 0.07064
+      }
+    },
+    {
+      "n_skip": 2,
+      "greedy": {
+        "indices": [
+          3,
+          4
+        ],
+        "delta_bpb": 0.1426,
+        "bpb": 4.49651,
+        "latency_ms": 154.26,
+        "speedup": 1.179
+      },
+      "first_n": {
+        "indices": [
+          0,
+          1
+        ],
+        "delta_bpb": 0.1661,
+        "bpb": 4.52001,
+        "latency_ms": 154.61,
+        "speedup": 1.176
+      },
+      "last_n": {
+        "indices": [
+          18,
+          19
+        ],
+        "delta_bpb": 0.12778,
+        "bpb": 4.48169,
+        "latency_ms": 154.48,
+        "speedup": 1.177
+      },
+      "middle_n": {
+        "indices": [
+          9,
+          10
+        ],
+        "delta_bpb": 0.21711,
+        "bpb": 4.57102,
+        "latency_ms": 154.51,
+        "speedup": 1.177
+      },
+      "evens_first": {
+        "indices": [
+          0,
+          2
+        ],
+        "delta_bpb": 0.11385,
+        "bpb": 4.46777,
+        "latency_ms": 154.85,
+        "speedup": 1.175
+      },
+      "random": {
+        "mean_delta_bpb": 0.13028,
+        "std_delta_bpb": 0.05784
+      }
+    },
+    {
+      "n_skip": 3,
+      "greedy": {
+        "indices": [
+          3,
+          4,
+          5
+        ],
+        "delta_bpb": 0.21224,
+        "bpb": 4.56616,
+        "latency_ms": 145.93,
+        "speedup": 1.246
+      },
+      "first_n": {
+        "indices": [
+          0,
+          1,
+          2
+        ],
+        "delta_bpb": 0.45785,
+        "bpb": 4.81176,
+        "latency_ms": 146.23,
+        "speedup": 1.244
+      },
+      "last_n": {
+        "indices": [
+          17,
+          18,
+          19
+        ],
+        "delta_bpb": 0.57347,
+        "bpb": 4.92738,
+        "latency_ms": 145.81,
+        "speedup": 1.247
+      },
+      "middle_n": {
+        "indices": [
+          9,
+          10,
+          11
+        ],
+        "delta_bpb": 0.31575,
+        "bpb": 4.66967,
+        "latency_ms": 145.78,
+        "speedup": 1.248
+      },
+      "evens_first": {
+        "indices": [
+          0,
+          2,
+          4
+        ],
+        "delta_bpb": 0.18135,
+        "bpb": 4.53526,
+        "latency_ms": 146.21,
+        "speedup": 1.244
+      },
+      "random": {
+        "mean_delta_bpb": 0.11702,
+        "std_delta_bpb": 0.04566
+      }
+    },
+    {
+      "n_skip": 4,
+      "greedy": {
+        "indices": [
+          3,
+          4,
+          5,
+          13
+        ],
+        "delta_bpb": 0.22614,
+        "bpb": 4.58006,
+        "latency_ms": 137.32,
+        "speedup": 1.324
+      },
+      "first_n": {
+        "indices": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "delta_bpb": 0.90961,
+        "bpb": 5.26353,
+        "latency_ms": 137.7,
+        "speedup": 1.321
+      },
+      "last_n": {
+        "indices": [
+          16,
+          17,
+          18,
+          19
+        ],
+        "delta_bpb": 1.51774,
+        "bpb": 5.87166,
+        "latency_ms": 137.38,
+        "speedup": 1.324
+      },
+      "middle_n": {
+        "indices": [
+          8,
+          9,
+          10,
+          11
+        ],
+        "delta_bpb": 0.33997,
+        "bpb": 4.69389,
+        "latency_ms": 137.31,
+        "speedup": 1.325
+      },
+      "evens_first": {
+        "indices": [
+          0,
+          2,
+          4,
+          6
+        ],
+        "delta_bpb": 0.22758,
+        "bpb": 4.58149,
+        "latency_ms": 137.78,
+        "speedup": 1.32
+      },
+      "random": {
+        "mean_delta_bpb": 0.19334,
+        "std_delta_bpb": 0.08325
+      }
+    },
+    {
+      "n_skip": 5,
+      "greedy": {
+        "indices": [
+          3,
+          4,
+          5,
+          13,
+          15
+        ],
+        "delta_bpb": 0.2961,
+        "bpb": 4.65001,
+        "latency_ms": 128.75,
+        "speedup": 1.413
+      },
+      "first_n": {
+        "indices": [
+          0,
+          1,
+          2,
+          3,
+          4
+        ],
+        "delta_bpb": 1.67001,
+        "bpb": 6.02392,
+        "latency_ms": 129.35,
+        "speedup": 1.406
+      },
+      "last_n": {
+        "indices": [
+          15,
+          16,
+          17,
+          18,
+          19
+        ],
+        "delta_bpb": 4.45249,
+        "bpb": 8.80641,
+        "latency_ms": 128.89,
+        "speedup": 1.411
+      },
+      "middle_n": {
+        "indices": [
+          8,
+          9,
+          10,
+          11,
+          12
+        ],
+        "delta_bpb": 0.57772,
+        "bpb": 4.93164,
+        "latency_ms": 129.03,
+        "speedup": 1.41
+      },
+      "evens_first": {
+        "indices": [
+          0,
+          2,
+          4,
+          6,
+          8
+        ],
+        "delta_bpb": 0.26991,
+        "bpb": 4.62382,
+        "latency_ms": 129.51,
+        "speedup": 1.404
+      },
+      "random": {
+        "mean_delta_bpb": 0.31144,
+        "std_delta_bpb": 0.07054
+      }
+    },
+    {
+      "n_skip": 6,
+      "greedy": {
+        "indices": [
+          3,
+          4,
+          5,
+          13,
+          15,
+          19
+        ],
+        "delta_bpb": 0.33467,
+        "bpb": 4.68858,
+        "latency_ms": 120.4,
+        "speedup": 1.511
+      },
+      "first_n": {
+        "indices": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "delta_bpb": 1.96053,
+        "bpb": 6.31445,
+        "latency_ms": 120.93,
+        "speedup": 1.504
+      },
+      "last_n": {
+        "indices": [
+          14,
+          15,
+          16,
+          17,
+          18,
+          19
+        ],
+        "delta_bpb": 5.04036,
+        "bpb": 9.39427,
+        "latency_ms": 120.56,
+        "speedup": 1.509
+      },
+      "middle_n": {
+        "indices": [
+          7,
+          8,
+          9,
+          10,
+          11,
+          12
+        ],
+        "delta_bpb": 0.66614,
+        "bpb": 5.02005,
+        "latency_ms": 120.59,
+        "speedup": 1.508
+      },
+      "evens_first": {
+        "indices": [
+          0,
+          2,
+          4,
+          6,
+          8,
+          10
+        ],
+        "delta_bpb": 0.36944,
+        "bpb": 4.72336,
+        "latency_ms": 121.24,
+        "speedup": 1.5
+      },
+      "random": {
+        "mean_delta_bpb": 0.29334,
+        "std_delta_bpb": 0.08589
+      }
+    },
+    {
+      "n_skip": 8,
+      "greedy": {
+        "indices": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          13,
+          15,
+          19
+        ],
+        "delta_bpb": 0.68532,
+        "bpb": 5.03923,
+        "latency_ms": 103.91,
+        "speedup": 1.75
+      },
+      "first_n": {
+        "indices": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7
+        ],
+        "delta_bpb": 2.77001,
+        "bpb": 7.12392,
+        "latency_ms": 104.37,
+        "speedup": 1.743
+      },
+      "last_n": {
+        "indices": [
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19
+        ],
+        "delta_bpb": 4.78663,
+        "bpb": 9.14055,
+        "latency_ms": 103.92,
+        "speedup": 1.75
+      },
+      "middle_n": {
+        "indices": [
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13
+        ],
+        "delta_bpb": 1.70956,
+        "bpb": 6.06347,
+        "latency_ms": 104.0,
+        "speedup": 1.749
+      },
+      "evens_first": {
+        "indices": [
+          0,
+          2,
+          4,
+          6,
+          8,
+          10,
+          12,
+          14
+        ],
+        "delta_bpb": 0.49195,
+        "bpb": 4.84587,
+        "latency_ms": 104.82,
+        "speedup": 1.735
+      },
+      "random": {
+        "mean_delta_bpb": 0.55307,
+        "std_delta_bpb": 0.18597
+      }
+    },
+    {
+      "n_skip": 10,
+      "greedy": {
+        "indices": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          13,
+          15,
+          16,
+          19
+        ],
+        "delta_bpb": 1.01029,
+        "bpb": 5.36421,
+        "latency_ms": 87.56,
+        "speedup": 2.077
+      },
+      "first_n": {
+        "indices": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9
+        ],
+        "delta_bpb": 3.4926,
+        "bpb": 7.84652,
+        "latency_ms": 87.8,
+        "speedup": 2.071
+      },
+      "last_n": {
+        "indices": [
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19
+        ],
+        "delta_bpb": 5.74549,
+        "bpb": 10.0994,
+        "latency_ms": 87.37,
+        "speedup": 2.082
+      },
+      "middle_n": {
+        "indices": [
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14
+        ],
+        "delta_bpb": 2.55135,
+        "bpb": 6.90526,
+        "latency_ms": 87.45,
+        "speedup": 2.08
+      },
+      "evens_first": {
+        "indices": [
+          0,
+          2,
+          4,
+          6,
+          8,
+          10,
+          12,
+          14,
+          16,
+          18
+        ],
+        "delta_bpb": 0.55007,
+        "bpb": 4.90398,
+        "latency_ms": 88.36,
+        "speedup": 2.058
+      },
+      "random": {
+        "mean_delta_bpb": 1.13698,
+        "std_delta_bpb": 0.71559
+      }
+    }
+  ]
+}
