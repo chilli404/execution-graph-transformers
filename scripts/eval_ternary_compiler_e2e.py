@@ -89,18 +89,19 @@ def main():
     model.eval()
 
     n_layers = mcfg.n_layer
-    loader = ShardedLoader(args.val_shards, 8, mcfg.ctx_len, seed=42, device=device)
+    cal_loader = ShardedLoader(args.val_shards, 8, mcfg.ctx_len, seed=42, device=device)
+    eval_loader = ShardedLoader(args.val_shards, 8, mcfg.ctx_len, seed=999, device=device)
 
-    # Step 1: Measure per-layer skip cost
-    print("=== Step 1: Per-layer skip costs ===")
-    baseline_bpb = evaluate_bpb(model, loader, "sequential", args.n_eval_batches)
+    # Step 1: Measure per-layer skip cost (calibration set)
+    print("=== Step 1: Per-layer skip costs (calibration seed=42) ===")
+    baseline_bpb = evaluate_bpb(model, cal_loader, "sequential", args.n_eval_batches)
     print(f"  Baseline (all seq) BPB: {baseline_bpb:.4f}")
 
     skip_costs = []
     for layer in range(n_layers):
         mask = ["sequential"] * n_layers
         mask[layer] = "skip"
-        bpb = evaluate_bpb(model, loader, mask, args.n_eval_batches)
+        bpb = evaluate_bpb(model, cal_loader, mask, args.n_eval_batches)
         cost = bpb - baseline_bpb
         skip_costs.append(cost)
         print(f"  Layer {layer:>2}: ΔBPB = {cost:+.4f}")
@@ -111,10 +112,14 @@ def main():
     greedy_order = np.argsort(skip_costs).tolist()
     print(f"\n  Greedy order: {greedy_order}")
 
-    # Step 3: For each skip budget, build compiler mask and measure everything
-    print("\n=== Step 2: Compiler Pareto frontier ===")
+    # Step 3: For each skip budget, build compiler mask and evaluate on HELD-OUT data
+    print("\n=== Step 2: Compiler Pareto frontier (eval seed=999) ===")
 
-    x_timing, _ = loader.next_batch()
+    x_timing, _ = eval_loader.next_batch()
+
+    # Baseline on held-out set
+    baseline_bpb_eval = evaluate_bpb(model, eval_loader, "sequential", args.n_eval_batches)
+    print(f"  Baseline (eval set) BPB: {baseline_bpb_eval:.4f}")
 
     # Baseline latency
     t_seq = time_forward(model, x_timing, "sequential")
@@ -134,9 +139,9 @@ def main():
         for i in selected:
             compiler_mask[i] = "skip"
 
-        # Measure actual quality for this exact mask
-        actual_bpb = evaluate_bpb(model, loader, compiler_mask, args.n_eval_batches)
-        actual_delta = actual_bpb - baseline_bpb
+        # Measure actual quality on held-out data for this exact mask
+        actual_bpb = evaluate_bpb(model, eval_loader, compiler_mask, args.n_eval_batches)
+        actual_delta = actual_bpb - baseline_bpb_eval
 
         # Measure actual latency for this exact mask
         latency = time_forward(model, x_timing, compiler_mask)
@@ -156,9 +161,9 @@ def main():
             "speedup": round(speedup, 3),
         })
 
-    # Also measure all-sequential and all-fused for reference
-    fused_bpb = evaluate_bpb(model, loader, "parallel_fused", args.n_eval_batches)
-    fused_delta = fused_bpb - baseline_bpb
+    # Also measure all-fused for reference on held-out data
+    fused_bpb = evaluate_bpb(model, eval_loader, "parallel_fused", args.n_eval_batches)
+    fused_delta = fused_bpb - baseline_bpb_eval
 
     output = {
         "checkpoint": args.ckpt,
