@@ -38,14 +38,23 @@ class Muon(torch.optim.Optimizer):
                     continue
                 state = self.state[p]
                 if "momentum_buffer" not in state:
-                    state["momentum_buffer"] = torch.zeros_like(p.grad)
+                    state["momentum_buffer"] = torch.zeros_like(p.grad, dtype=torch.float32)
+                    if p.dtype != torch.float32:
+                        state["fp32_copy"] = p.data.float()
                 buf = state["momentum_buffer"]
-                buf.lerp_(p.grad, 1 - group["momentum"])
-                g = p.grad.lerp(buf, group["momentum"])  # nesterov
+                grad_f32 = p.grad.float()
+                buf.lerp_(grad_f32, 1 - group["momentum"])
+                g = grad_f32.lerp(buf, group["momentum"])  # nesterov
                 g = newton_schulz(g, group["ns_steps"])
-                # scale update to keep RMS comparable across shapes
                 scale = max(1.0, p.size(0) / p.size(1)) ** 0.5
-                if group["weight_decay"] > 0:
-                    p.mul_(1 - group["lr"] * group["weight_decay"])
-                p.add_(g, alpha=-group["lr"] * scale)
+                if "fp32_copy" in state:
+                    fp32_p = state["fp32_copy"]
+                    if group["weight_decay"] > 0:
+                        fp32_p.mul_(1 - group["lr"] * group["weight_decay"])
+                    fp32_p.add_(g, alpha=-group["lr"] * scale)
+                    p.copy_(fp32_p)
+                else:
+                    if group["weight_decay"] > 0:
+                        p.mul_(1 - group["lr"] * group["weight_decay"])
+                    p.add_(g, alpha=-group["lr"] * scale)
         return loss
