@@ -117,38 +117,45 @@ def main():
 
     x_timing, _ = eval_loader.next_batch()
 
-    # Baseline on held-out set
+    # Baseline: all sequential (eval set)
     baseline_bpb_eval = evaluate_bpb(model, eval_loader, "sequential", args.n_eval_batches)
-    print(f"  Baseline (eval set) BPB: {baseline_bpb_eval:.4f}")
-
-    # Baseline latency
     t_seq = time_forward(model, x_timing, "sequential")
-    t_fused = time_forward(model, x_timing, "parallel_fused")
+    print(f"  Baseline (all seq): {baseline_bpb_eval:.4f} BPB, {t_seq*1000:.1f}ms")
 
+    # Stage 1: all parallel fused (should be nearly free)
+    fused_bpb = evaluate_bpb(model, eval_loader, "parallel_fused", args.n_eval_batches)
+    fused_delta = fused_bpb - baseline_bpb_eval
+    t_fused = time_forward(model, x_timing, "parallel_fused")
+    fused_speedup = t_seq / t_fused
+    print(f"  Stage 1 (all par):  {fused_bpb:.4f} BPB (ΔBPB={fused_delta:+.4f}), "
+          f"{t_fused*1000:.1f}ms ({fused_speedup:.2f}x)")
+
+    # Stage 2: parallel + greedy skip
     results = []
-    print(f"\n{'n_skip':>6} {'Layers skipped':>20} {'Pred ΔBPB':>10} "
+    print(f"\n  Stage 2: parallel + greedy skip (cheapest layers first)")
+    print(f"  {'n_skip':>6} {'Layers skipped':>20} {'Pred ΔBPB':>10} "
           f"{'Actual ΔBPB':>12} {'Latency':>10} {'Speedup':>8}")
-    print("-" * 72)
+    print("  " + "-" * 72)
 
     for n_skip in range(0, min(n_layers // 2 + 1, 11)):
         selected = sorted(greedy_order[:n_skip])
         predicted_cost = float(skip_costs[selected].sum()) if selected else 0.0
 
-        # Build mask: all parallel (fused) + selected skips
+        # Build mask: all parallel + selected skips
         compiler_mask = ["parallel"] * n_layers
         for i in selected:
             compiler_mask[i] = "skip"
 
-        # Measure actual quality on held-out data for this exact mask
+        # Measure actual quality on held-out data
         actual_bpb = evaluate_bpb(model, eval_loader, compiler_mask, args.n_eval_batches)
         actual_delta = actual_bpb - baseline_bpb_eval
 
-        # Measure actual latency for this exact mask
+        # Measure actual latency
         latency = time_forward(model, x_timing, compiler_mask)
         speedup = t_seq / latency
 
         selected_str = str(selected) if selected else "[]"
-        print(f"{n_skip:>6} {selected_str:>20} {predicted_cost:>10.4f} "
+        print(f"  {n_skip:>6} {selected_str:>20} {predicted_cost:>10.4f} "
               f"{actual_delta:>12.4f} {latency*1000:>9.1f}ms {speedup:>7.2f}x")
 
         results.append({
@@ -160,10 +167,6 @@ def main():
             "latency_ms": round(latency * 1000, 2),
             "speedup": round(speedup, 3),
         })
-
-    # Also measure all-fused for reference on held-out data
-    fused_bpb = evaluate_bpb(model, eval_loader, "parallel_fused", args.n_eval_batches)
-    fused_delta = fused_bpb - baseline_bpb_eval
 
     output = {
         "checkpoint": args.ckpt,
