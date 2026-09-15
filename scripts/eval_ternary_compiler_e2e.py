@@ -1,12 +1,14 @@
 """End-to-end ternary compiler evaluation.
 
-For each skip budget (0, 1, 2, ... n_layers//2):
-1. Measure per-layer skip cost (single-layer skip ΔBPB)
-2. Greedy selection: skip cheapest layers first
-3. Profile actual wall-clock latency for the compiler-selected mask
-4. Measure actual quality (BPB) for that exact mask
+2-stage compiler with held-out evaluation (no leakage):
+  - Calibration (seed=42): measure per-layer skip cost
+  - Evaluation (seed=999): measure quality + latency for compiler-selected masks
 
-Produces one coherent table: compiler mask → measured latency → measured quality.
+Stage 1: Parallelize all layers with kernel fusion (free speedup).
+Stage 2: Greedily skip cheapest layers on top of all-fused baseline.
+
+Each row in the output table uses ONE mask, with measured latency and
+measured quality on held-out data.
 
 Usage:
   python scripts/eval_ternary_compiler_e2e.py \
@@ -92,71 +94,68 @@ def main():
     cal_loader = ShardedLoader(args.val_shards, 8, mcfg.ctx_len, seed=42, device=device)
     eval_loader = ShardedLoader(args.val_shards, 8, mcfg.ctx_len, seed=999, device=device)
 
-    # Step 1: Measure per-layer skip cost (calibration set)
-    print("=== Step 1: Per-layer skip costs (calibration seed=42) ===")
-    baseline_bpb = evaluate_bpb(model, cal_loader, "sequential", args.n_eval_batches)
-    print(f"  Baseline (all seq) BPB: {baseline_bpb:.4f}")
+    # ── Step 1: Per-layer skip costs on calibration set ──────────────
+    print("=" * 60)
+    print("Step 1: Per-layer skip costs (calibration, seed=42)")
+    print("=" * 60)
+
+    cal_baseline = evaluate_bpb(model, cal_loader, "sequential", args.n_eval_batches)
+    print(f"  Calibration baseline (seq): {cal_baseline:.4f} BPB")
 
     skip_costs = []
     for layer in range(n_layers):
         mask = ["sequential"] * n_layers
         mask[layer] = "skip"
         bpb = evaluate_bpb(model, cal_loader, mask, args.n_eval_batches)
-        cost = bpb - baseline_bpb
+        cost = bpb - cal_baseline
         skip_costs.append(cost)
-        print(f"  Layer {layer:>2}: ΔBPB = {cost:+.4f}")
+        print(f"  Layer {layer:>2}: ΔBPB = {cost:+.5f}")
 
     skip_costs = np.array(skip_costs)
-
-    # Step 2: Greedy order (cheapest first)
     greedy_order = np.argsort(skip_costs).tolist()
-    print(f"\n  Greedy order: {greedy_order}")
+    print(f"\n  Greedy skip order (cheapest first): {greedy_order}")
 
-    # Step 3: For each skip budget, build compiler mask and evaluate on HELD-OUT data
-    print("\n=== Step 2: Compiler Pareto frontier (eval seed=999) ===")
+    # ── Step 2: Evaluate on held-out data ────────────────────────────
+    print()
+    print("=" * 60)
+    print("Step 2: Compiler Pareto frontier (eval, seed=999)")
+    print("=" * 60)
 
     x_timing, _ = eval_loader.next_batch()
 
-    # Baseline: all sequential (eval set)
-    baseline_bpb_eval = evaluate_bpb(model, eval_loader, "sequential", args.n_eval_batches)
+    # Row 0: All sequential (baseline)
+    seq_bpb = evaluate_bpb(model, eval_loader, "sequential", args.n_eval_batches)
     t_seq = time_forward(model, x_timing, "sequential")
-    print(f"  Baseline (all seq): {baseline_bpb_eval:.4f} BPB, {t_seq*1000:.1f}ms")
+    print(f"\n  {'Config':<30} {'BPB':>8} {'ΔBPB':>8} {'Latency':>10} {'Speedup':>8}")
+    print(f"  {'-'*66}")
+    print(f"  {'All sequential (baseline)':<30} {seq_bpb:>8.4f} {'—':>8} {t_seq*1000:>9.1f}ms {'1.00x':>8}")
 
-    # Stage 1: all parallel fused (should be nearly free)
+    # Row 1: All parallel fused (stage 1 — free speedup)
     fused_bpb = evaluate_bpb(model, eval_loader, "parallel_fused", args.n_eval_batches)
-    fused_delta = fused_bpb - baseline_bpb_eval
+    fused_delta = fused_bpb - seq_bpb
     t_fused = time_forward(model, x_timing, "parallel_fused")
     fused_speedup = t_seq / t_fused
-    print(f"  Stage 1 (all par):  {fused_bpb:.4f} BPB (ΔBPB={fused_delta:+.4f}), "
-          f"{t_fused*1000:.1f}ms ({fused_speedup:.2f}x)")
+    print(f"  {'All fused (stage 1)':<30} {fused_bpb:>8.4f} {fused_delta:>+8.4f} {t_fused*1000:>9.1f}ms {fused_speedup:>7.2f}x")
 
-    # Stage 2: parallel + greedy skip
+    # Rows 2+: Fused + skip N cheapest layers (stage 2)
     results = []
-    print(f"\n  Stage 2: parallel + greedy skip (cheapest layers first)")
-    print(f"  {'n_skip':>6} {'Layers skipped':>20} {'Pred ΔBPB':>10} "
-          f"{'Actual ΔBPB':>12} {'Latency':>10} {'Speedup':>8}")
-    print("  " + "-" * 72)
-
-    for n_skip in range(0, min(n_layers // 2 + 1, 11)):
+    for n_skip in range(1, min(n_layers // 2 + 1, 11)):
         selected = sorted(greedy_order[:n_skip])
-        predicted_cost = float(skip_costs[selected].sum()) if selected else 0.0
+        predicted_cost = float(skip_costs[selected].sum())
 
-        # Build mask: all parallel + selected skips
-        compiler_mask = ["parallel"] * n_layers
+        # Mask: parallel_fused for running layers, skip for selected
+        compiler_mask = ["parallel_fused"] * n_layers
         for i in selected:
             compiler_mask[i] = "skip"
 
-        # Measure actual quality on held-out data
         actual_bpb = evaluate_bpb(model, eval_loader, compiler_mask, args.n_eval_batches)
-        actual_delta = actual_bpb - baseline_bpb_eval
+        actual_delta = actual_bpb - seq_bpb
 
-        # Measure actual latency
         latency = time_forward(model, x_timing, compiler_mask)
         speedup = t_seq / latency
 
-        selected_str = str(selected) if selected else "[]"
-        print(f"  {n_skip:>6} {selected_str:>20} {predicted_cost:>10.4f} "
-              f"{actual_delta:>12.4f} {latency*1000:>9.1f}ms {speedup:>7.2f}x")
+        label = f"Fused + skip {n_skip}"
+        print(f"  {label:<30} {actual_bpb:>8.4f} {actual_delta:>+8.4f} {latency*1000:>9.1f}ms {speedup:>7.2f}x")
 
         results.append({
             "n_skip": n_skip,
@@ -168,15 +167,25 @@ def main():
             "speedup": round(speedup, 3),
         })
 
+    # ── Summary ──────────────────────────────────────────────────────
+    print(f"\n  Summary:")
+    print(f"    Stage 1 (fuse all):    {fused_speedup:.2f}x at ΔBPB={fused_delta:+.4f}")
+    if len(results) >= 4:
+        r4 = results[3]
+        print(f"    Stage 2 (fuse+skip 4): {r4['speedup']:.2f}x at ΔBPB={r4['actual_delta_bpb']:+.4f}")
+
     output = {
         "checkpoint": args.ckpt,
         "n_layers": n_layers,
-        "baseline_bpb": round(baseline_bpb, 5),
-        "baseline_latency_ms": round(t_seq * 1000, 2),
+        "calibration_seed": 42,
+        "eval_seed": 999,
+        "n_eval_batches": args.n_eval_batches,
+        "seq_bpb": round(seq_bpb, 5),
+        "seq_latency_ms": round(t_seq * 1000, 2),
         "fused_bpb": round(fused_bpb, 5),
         "fused_delta_bpb": round(fused_delta, 5),
         "fused_latency_ms": round(t_fused * 1000, 2),
-        "fused_speedup": round(t_seq / t_fused, 3),
+        "fused_speedup": round(fused_speedup, 3),
         "skip_costs": [round(c, 5) for c in skip_costs.tolist()],
         "greedy_order": greedy_order,
         "compiler_results": results,
@@ -185,7 +194,7 @@ def main():
     Path(args.output).parent.mkdir(parents=True, exist_ok=True)
     with open(args.output, "w") as f:
         json.dump(output, f, indent=2)
-    print(f"\nSaved to {args.output}")
+    print(f"\n  Saved to {args.output}")
 
 
 if __name__ == "__main__":
