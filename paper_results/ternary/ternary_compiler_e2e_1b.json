@@ -1,0 +1,230 @@
+{
+  "checkpoint": "/mnt/mldata/checkpoints/execution_graph_transformers/1b_ternary_gradnorm/ckpts/step012000.safetensors",
+  "n_layers": 28,
+  "calibration_seed": 42,
+  "eval_seed": 999,
+  "n_eval_batches": 16,
+  "seq_bpb": 4.56798,
+  "seq_latency_ms": 436.8,
+  "fused_bpb": 4.60314,
+  "fused_delta_bpb": 0.03516,
+  "fused_latency_ms": 409.73,
+  "fused_speedup": 1.066,
+  "skip_costs": [
+    0.02261,
+    0.00067,
+    -0.0031,
+    -0.11395,
+    -0.07392,
+    -0.02211,
+    -0.00435,
+    0.09496,
+    0.12158,
+    0.05644,
+    0.02324,
+    0.07026,
+    0.05113,
+    0.0035,
+    0.05703,
+    0.01454,
+    0.01188,
+    0.04338,
+    0.00746,
+    -0.00598,
+    0.05728,
+    -0.00473,
+    0.04831,
+    0.07929,
+    0.02073,
+    0.0308,
+    0.03427,
+    0.05094
+  ],
+  "greedy_order": [
+    3,
+    4,
+    5,
+    19,
+    21,
+    6,
+    2,
+    1,
+    13,
+    18,
+    16,
+    15,
+    24,
+    0,
+    10,
+    25,
+    26,
+    17,
+    22,
+    27,
+    12,
+    9,
+    14,
+    20,
+    11,
+    23,
+    7,
+    8
+  ],
+  "compiler_results": [
+    {
+      "n_skip": 1,
+      "selected_layers": [
+        3
+      ],
+      "predicted_delta_bpb": -0.11395,
+      "actual_delta_bpb": -0.00157,
+      "actual_bpb": 4.5664,
+      "latency_ms": 394.66,
+      "speedup": 1.107
+    },
+    {
+      "n_skip": 2,
+      "selected_layers": [
+        3,
+        4
+      ],
+      "predicted_delta_bpb": -0.18787,
+      "actual_delta_bpb": 0.18769,
+      "actual_bpb": 4.75567,
+      "latency_ms": 380.04,
+      "speedup": 1.149
+    },
+    {
+      "n_skip": 3,
+      "selected_layers": [
+        3,
+        4,
+        5
+      ],
+      "predicted_delta_bpb": -0.20999,
+      "actual_delta_bpb": 0.18997,
+      "actual_bpb": 4.75795,
+      "latency_ms": 365.23,
+      "speedup": 1.196
+    },
+    {
+      "n_skip": 4,
+      "selected_layers": [
+        3,
+        4,
+        5,
+        19
+      ],
+      "predicted_delta_bpb": -0.21597,
+      "actual_delta_bpb": 0.16213,
+      "actual_bpb": 4.73011,
+      "latency_ms": 350.71,
+      "speedup": 1.245
+    },
+    {
+      "n_skip": 5,
+      "selected_layers": [
+        3,
+        4,
+        5,
+        19,
+        21
+      ],
+      "predicted_delta_bpb": -0.2207,
+      "actual_delta_bpb": 0.27193,
+      "actual_bpb": 4.83991,
+      "latency_ms": 335.83,
+      "speedup": 1.301
+    },
+    {
+      "n_skip": 6,
+      "selected_layers": [
+        3,
+        4,
+        5,
+        6,
+        19,
+        21
+      ],
+      "predicted_delta_bpb": -0.22505,
+      "actual_delta_bpb": 0.25128,
+      "actual_bpb": 4.81926,
+      "latency_ms": 321.38,
+      "speedup": 1.359
+    },
+    {
+      "n_skip": 7,
+      "selected_layers": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        19,
+        21
+      ],
+      "predicted_delta_bpb": -0.22815,
+      "actual_delta_bpb": 0.60646,
+      "actual_bpb": 5.17444,
+      "latency_ms": 307.1,
+      "speedup": 1.422
+    },
+    {
+      "n_skip": 8,
+      "selected_layers": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        19,
+        21
+      ],
+      "predicted_delta_bpb": -0.22749,
+      "actual_delta_bpb": 0.72802,
+      "actual_bpb": 5.296,
+      "latency_ms": 292.47,
+      "speedup": 1.494
+    },
+    {
+      "n_skip": 9,
+      "selected_layers": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        13,
+        19,
+        21
+      ],
+      "predicted_delta_bpb": -0.22399,
+      "actual_delta_bpb": 0.85659,
+      "actual_bpb": 5.42457,
+      "latency_ms": 278.1,
+      "speedup": 1.571
+    },
+    {
+      "n_skip": 10,
+      "selected_layers": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        13,
+        18,
+        19,
+        21
+      ],
+      "predicted_delta_bpb": -0.21654,
+      "actual_delta_bpb": 0.89498,
+      "actual_bpb": 5.46296,
+      "latency_ms": 263.96,
+      "speedup": 1.655
+    }
+  ]
+}

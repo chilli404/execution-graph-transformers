@@ -1,0 +1,214 @@
+{
+  "checkpoint": "/mnt/mldata/checkpoints/execution_graph_transformers/430m_ternary_gradnorm/ckpts/step012000.safetensors",
+  "n_layers": 20,
+  "calibration_seed": 42,
+  "eval_seed": 999,
+  "n_eval_batches": 16,
+  "seq_bpb": 4.36774,
+  "seq_latency_ms": 180.87,
+  "fused_bpb": 4.42692,
+  "fused_delta_bpb": 0.05917,
+  "fused_latency_ms": 168.32,
+  "fused_speedup": 1.075,
+  "skip_costs": [
+    0.01819,
+    -0.00409,
+    -0.00485,
+    -0.1037,
+    -0.07514,
+    -0.00976,
+    0.00354,
+    0.11123,
+    0.12945,
+    0.05011,
+    0.01359,
+    0.06994,
+    0.05125,
+    -0.00814,
+    0.0286,
+    -0.00643,
+    -0.00092,
+    0.04808,
+    0.01248,
+    -0.00594
+  ],
+  "greedy_order": [
+    3,
+    4,
+    5,
+    13,
+    15,
+    19,
+    2,
+    1,
+    16,
+    6,
+    18,
+    10,
+    0,
+    14,
+    17,
+    9,
+    12,
+    11,
+    7,
+    8
+  ],
+  "compiler_results": [
+    {
+      "n_skip": 1,
+      "selected_layers": [
+        3
+      ],
+      "predicted_delta_bpb": -0.1037,
+      "actual_delta_bpb": 0.0284,
+      "actual_bpb": 4.39614,
+      "latency_ms": 160.55,
+      "speedup": 1.127
+    },
+    {
+      "n_skip": 2,
+      "selected_layers": [
+        3,
+        4
+      ],
+      "predicted_delta_bpb": -0.17884,
+      "actual_delta_bpb": 0.2103,
+      "actual_bpb": 4.57805,
+      "latency_ms": 152.34,
+      "speedup": 1.187
+    },
+    {
+      "n_skip": 3,
+      "selected_layers": [
+        3,
+        4,
+        5
+      ],
+      "predicted_delta_bpb": -0.1886,
+      "actual_delta_bpb": 0.24607,
+      "actual_bpb": 4.61381,
+      "latency_ms": 144.23,
+      "speedup": 1.254
+    },
+    {
+      "n_skip": 4,
+      "selected_layers": [
+        3,
+        4,
+        5,
+        13
+      ],
+      "predicted_delta_bpb": -0.19674,
+      "actual_delta_bpb": 0.25325,
+      "actual_bpb": 4.62099,
+      "latency_ms": 136.11,
+      "speedup": 1.329
+    },
+    {
+      "n_skip": 5,
+      "selected_layers": [
+        3,
+        4,
+        5,
+        13,
+        15
+      ],
+      "predicted_delta_bpb": -0.20317,
+      "actual_delta_bpb": 0.39059,
+      "actual_bpb": 4.75833,
+      "latency_ms": 127.97,
+      "speedup": 1.413
+    },
+    {
+      "n_skip": 6,
+      "selected_layers": [
+        3,
+        4,
+        5,
+        13,
+        15,
+        19
+      ],
+      "predicted_delta_bpb": -0.20911,
+      "actual_delta_bpb": 0.28724,
+      "actual_bpb": 4.65498,
+      "latency_ms": 119.84,
+      "speedup": 1.509
+    },
+    {
+      "n_skip": 7,
+      "selected_layers": [
+        2,
+        3,
+        4,
+        5,
+        13,
+        15,
+        19
+      ],
+      "predicted_delta_bpb": -0.21396,
+      "actual_delta_bpb": 0.53805,
+      "actual_bpb": 4.90579,
+      "latency_ms": 111.84,
+      "speedup": 1.617
+    },
+    {
+      "n_skip": 8,
+      "selected_layers": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        13,
+        15,
+        19
+      ],
+      "predicted_delta_bpb": -0.21805,
+      "actual_delta_bpb": 0.56481,
+      "actual_bpb": 4.93255,
+      "latency_ms": 103.71,
+      "speedup": 1.744
+    },
+    {
+      "n_skip": 9,
+      "selected_layers": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        13,
+        15,
+        16,
+        19
+      ],
+      "predicted_delta_bpb": -0.21897,
+      "actual_delta_bpb": 0.67193,
+      "actual_bpb": 5.03968,
+      "latency_ms": 95.59,
+      "speedup": 1.892
+    },
+    {
+      "n_skip": 10,
+      "selected_layers": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        13,
+        15,
+        16,
+        19
+      ],
+      "predicted_delta_bpb": -0.21543,
+      "actual_delta_bpb": 0.96002,
+      "actual_bpb": 5.32777,
+      "latency_ms": 87.47,
+      "speedup": 2.068
+    }
+  ]
+}
