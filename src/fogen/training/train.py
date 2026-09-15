@@ -500,8 +500,9 @@ def main():
                         gradnorm_rho, step=step)
                 else:
                     cw = execution_cfg.get("consistency_weight", 0.1)
-                seq_logits = model(x, mode="sequential")
-                mask_logits = model(x, mode=execution_mask)
+                use_gc = execution_cfg.get("memory_efficient", False)
+                seq_logits = model(x, mode="sequential", gradient_checkpointing=use_gc)
+                mask_logits = model(x, mode=execution_mask, gradient_checkpointing=use_gc)
                 seq_loss = F.cross_entropy(
                     seq_logits.view(-1, seq_logits.size(-1)), y.reshape(-1))
                 mask_loss = F.cross_entropy(
